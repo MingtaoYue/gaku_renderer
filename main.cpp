@@ -1,8 +1,16 @@
+#include <vector>
+#include <cmath>
 #include "tgaimage.h"
+#include "model.h"
+#include "geometry.h"
+
 using namespace std;
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
+const int width = 1000;
+const int height = 1000;
+Model *model = NULL;
 
 // Line drawing function (Bresenham's line drawing algorithm).
 void line(int x0, int y0, int x1, int y1, TGAImage &image, TGAColor color) {
@@ -40,14 +48,27 @@ void line(int x0, int y0, int x1, int y1, TGAImage &image, TGAColor color) {
 }
 
 int main(int argc, char** argv) {
-    int width = 200;
-    int height = 150;
+    model = new Model("obj/african_head.obj");
     TGAImage image(width, height, TGAImage::RGB);
-    line(13, 20, 80, 40, image, white);
-    line(20, 13, 40, 80, image, red);
+    
+    // Draw the model.
+    for (int i = 0; i < model->nfaces(); i++) {
+        vector<int> face = model->face(i);
+        for (int j = 0; j < 3; j++) {
+            Vec3f v0 = model->vert(face[j]);
+            Vec3f v1 = model->vert(face[(j + 1) % 3]);
+            // Original range is [-1, 1], scale to [0, width], [0, height].
+            int x0 = (v0.x + 1) * width / 2;
+            int y0 = (v0.y + 1) * height / 2;
+            int x1 = (v1.x + 1) * width / 2;
+            int y1 = (v1.y + 1) * height / 2;
+            line(x0, y0, x1, y1, image, white);
+        }
+    }
 
-    // origin at the left bottom corner of the image.
+    // Origin at the left bottom corner of the image.
     image.flip_vertically();
     image.write_tga_file("output.tga");
+    delete model;
     return 0;
 }
