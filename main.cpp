@@ -8,8 +8,8 @@ using namespace std;
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
-const int width = 1000;
-const int height = 1000;
+const int width = 2000;
+const int height = 2000;
 Model *model = NULL;
 
 // Line drawing function (Bresenham's line drawing algorithm).
@@ -48,7 +48,7 @@ void line(int x0, int y0, int x1, int y1, TGAImage &image, TGAColor color) {
 }
 
 int main(int argc, char** argv) {
-    model = new Model("obj/african_head.obj");
+    model = new Model("obj/mvs3d.obj");
     TGAImage image(width, height, TGAImage::RGB);
     
     // Draw the model.
@@ -58,10 +58,14 @@ int main(int argc, char** argv) {
             Vec3f v0 = model->vert(face[j]);
             Vec3f v1 = model->vert(face[(j + 1) % 3]);
             // Original range is [-1, 1], scale to [0, width], [0, height].
-            int x0 = (v0.x + 1) * width / 2;
-            int y0 = (v0.y + 1) * height / 2;
-            int x1 = (v1.x + 1) * width / 2;
-            int y1 = (v1.y + 1) * height / 2;
+            // int x0 = (v0.x + 1) * width / 2;
+            // int y0 = (v0.y + 1) * height / 2;
+            // int x1 = (v1.x + 1) * width / 2;
+            // int y1 = (v1.y + 1) * height / 2;
+            int x0 = v0.x * 5 + 1000;
+            int y0 = -v0.y * 5+ 1000;
+            int x1 = v1.x * 5+ 1000;
+            int y1 = -v1.y * 5+ 1000;
             line(x0, y0, x1, y1, image, white);
         }
     }
