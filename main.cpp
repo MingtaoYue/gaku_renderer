@@ -1,5 +1,6 @@
 #include <vector>
 #include <cmath>
+#include <iostream>
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
@@ -9,8 +10,8 @@ using namespace std;
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 const TGAColor blue = TGAColor(0, 0, 255, 255);
-const int width = 500;
-const int height = 500;
+const int width = 10000;
+const int height = 10000;
 Model *model = NULL;
 
 // Line drawing function (Bresenham's line drawing algorithm).
@@ -93,27 +94,34 @@ void triangle(Vec2i t0, Vec2i t1, Vec2i t2, TGAImage &image, TGAColor color) {
 
 int main(int argc, char** argv) {
     TGAImage image(width, height, TGAImage::RGB);
-    Vec2i triangle0[3] = {Vec2i(10, 70), Vec2i(50, 160), Vec2i(70, 80)};
-    Vec2i triangle1[3] = {Vec2i(180, 50), Vec2i(150, 1), Vec2i(70, 180)};
-    Vec2i triangle2[3] = {Vec2i(180, 150), Vec2i(120, 160), Vec2i(130, 180)};
-    triangle(triangle0[0], triangle0[1], triangle0[2], image, red);
-    triangle(triangle1[0], triangle1[1], triangle1[2], image, white);
-    triangle(triangle2[0], triangle2[1], triangle2[2], image, blue);
+    //Vec2i triangle0[3] = {Vec2i(283, 213), Vec2i(282, 216), Vec2i(286, 216)};
+    // Vec2i triangle1[3] = {Vec2i(180, 50), Vec2i(150, 1), Vec2i(70, 180)};
+    // Vec2i triangle2[3] = {Vec2i(180, 150), Vec2i(120, 160), Vec2i(130, 180)};
+    //triangle(triangle0[0], triangle0[1], triangle0[2], image, red);
+    // triangle(triangle1[0], triangle1[1], triangle1[2], image, white);
+    // triangle(triangle2[0], triangle2[1], triangle2[2], image, blue);
+
     // Draw the model.
-    // model = new Model("obj/diablo3_pose.obj");
-    // for (int i = 0; i < model->nfaces(); i++) {
-    //     vector<int> face = model->face(i);
-    //     for (int j = 0; j < 3; j++) {
-    //         Vec3f v0 = model->vert(face[j]);
-    //         Vec3f v1 = model->vert(face[(j + 1) % 3]);
-    //         // Original range is [-1, 1], scale to [0, width], [0, height].
-    //         int x0 = (v0.x + 1) * width / 2;
-    //         int y0 = (v0.y + 1) * height / 2;
-    //         int x1 = (v1.x + 1) * width / 2;
-    //         int y1 = (v1.y + 1) * height / 2;
-    //         line(x0, y0, x1, y1, image, white);
-    //     }
-    // }
+    model = new Model("obj/diablo3_pose.obj");
+    for (int i = 0; i < model->nfaces(); i++) {
+        vector<int> face = model->face(i);
+        Vec2i screen_coords[3];
+        for (int j = 0; j < 3; j++) {
+            Vec3f v = model->vert(face[j]);
+            screen_coords[j] = Vec2i((v.x + 1.) * width / 2., (v.y + 1.) * height / 2.);
+        }
+        triangle(screen_coords[0], screen_coords[1], screen_coords[2], image, TGAColor(rand() % 255, rand() % 255, rand() % 255, 255));
+        // for (int j = 0; j < 3; j++) {
+        //     Vec3f v0 = model->vert(face[j]);
+        //     Vec3f v1 = model->vert(face[(j + 1) % 3]);
+        //     // Original range is [-1, 1], scale to [0, width], [0, height].
+        //     int x0 = (v0.x + 1) * width / 2;
+        //     int y0 = (v0.y + 1) * height / 2;
+        //     int x1 = (v1.x + 1) * width / 2;
+        //     int y1 = (v1.y + 1) * height / 2;
+        //     line(x0, y0, x1, y1, image, white);
+        // }
+    }
 
     // Origin at the left bottom corner of the image.
     image.flip_vertically();
