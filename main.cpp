@@ -49,9 +49,46 @@ void line(int x0, int y0, int x1, int y1, TGAImage &image, TGAColor color) {
 }
 
 void triangle(Vec2i t0, Vec2i t1, Vec2i t2, TGAImage &image, TGAColor color) {
-    line(t0.x, t0.y, t1.x, t1.y, image, color);
-    line(t1.x, t1.y, t2.x, t2.y, image, color);
-    line(t2.x, t2.y, t0.x, t0.y, image, color);
+    // Sort the vertices by y.
+    if (t0.y > t1.y) {
+        swap(t0, t1);
+    }
+    if (t0.y > t2.y) {
+        swap(t0, t2);
+    }
+    if (t1.y > t2.y) {
+        swap(t1, t2);
+    }
+    // Line sweeping.
+    int total_height = t2.y - t0.y;
+    int lower_height = t1.y - t0.y;
+    int upper_height = t2.y - t1.y;
+    // Draw lower half;
+    for (int y = t0.y; y <= t1.y; y++) {
+        float alpha = (y - t0.y) / (float)lower_height;
+        float beta = (y - t0.y) / (float)total_height;
+        Vec2i A = t0 + (t1 - t0) * alpha;
+        Vec2i B = t0 + (t2 - t0) * beta;
+        if (A.x > B.x) {
+            swap(A, B);
+        }
+        for (int x = A.x; x <= B.x; x++) {
+            image.set(x, y, color);
+        }
+    }
+    // Draw upper half;
+    for (int y = t1.y; y <= t2.y; y++) {
+        float alpha = (y - t1.y) / (float)upper_height;
+        float beta = (y - t0.y) / (float)total_height;
+        Vec2i A = t1 + (t2 - t1) * alpha;
+        Vec2i B = t0 + (t2 - t0) * beta;
+        if (A.x > B.x) {
+            swap(A, B);
+        }
+        for (int x = A.x; x <= B.x; x++) {
+            image.set(x, y, color);
+        }
+    }
 }
 
 int main(int argc, char** argv) {
