@@ -11,8 +11,8 @@ const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 const TGAColor blue = TGAColor(0, 0, 255, 255);
 
-const int width = 200;
-const int height = 200;
+const int width = 1000;
+const int height = 1000;
 
 Model *model = NULL;
 
@@ -50,20 +50,20 @@ void triangle(Vec2i *triangle, TGAImage &image, TGAColor color) {
 
 int main(int argc, char** argv) {
     TGAImage image(width, height, TGAImage::RGB);
-    Vec2i triangle0[3] = {Vec2i(10, 10), Vec2i(100, 30), Vec2i(190, 160)};
-    triangle(triangle0, image, red);
+    // Vec2i triangle0[3] = {Vec2i(10, 10), Vec2i(100, 30), Vec2i(190, 160)};
+    // triangle(triangle0, image, red);
 
     // Draw the model.
-    // model = new Model("obj/diablo3_pose.obj");
-    // for (int i = 0; i < model->nfaces(); i++) {
-    //     vector<int> face = model->face(i);
-    //     Vec2i screen_coords[3];
-    //     for (int j = 0; j < 3; j++) {
-    //         Vec3f v = model->vert(face[j]);
-    //         screen_coords[j] = Vec2i((v.x + 1.) * width / 2., (v.y + 1.) * height / 2.);
-    //     }
-    //     triangle(screen_coords[0], screen_coords[1], screen_coords[2], image, TGAColor(rand() % 255, rand() % 255, rand() % 255, 255));
-    // }
+    model = new Model("obj/diablo3_pose.obj");
+    for (int i = 0; i < model->nfaces(); i++) {
+        vector<int> face = model->face(i);
+        Vec2i screen_coords[3];
+        for (int j = 0; j < 3; j++) {
+            Vec3f v = model->vert(face[j]);
+            screen_coords[j] = Vec2i((v.x + 1.) * width / 2., (v.y + 1.) * height / 2.);
+        }
+        triangle(screen_coords, image, TGAColor(rand() % 255, rand() % 255, rand() % 255, 255));
+    }
 
     // Origin at the left bottom corner of the image.
     image.flip_vertically();
