@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <algorithm>
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
@@ -12,78 +13,109 @@ const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 const TGAColor blue = TGAColor(0, 0, 255, 255);
 
-const int width = 10000;
-const int height = 10000;
+const int width = 1000;
+const int height = 1000;
 
 Model *model = NULL;
 
-// Compute barycentric coordinates using cross product.
-Vec3f barycentric(Vec2i *triangle, Vec2i p) {
-    // Compute barycentric coordinate u, v in homogeneous coordinates.
-    Vec3f uv_homo = Vec3f(triangle[2].x- triangle[0].x, triangle[1].x - triangle[0].x, triangle[0].x - p.x) ^ Vec3f(triangle[2].y - triangle[0].y, triangle[1].y - triangle[0].y, triangle[0].y - p.y);
+// Compute barycentric coordinates.
+Vec3f barycentric(Vec3f a, Vec3f b, Vec3f c, Vec3f p) {
+    // Set cross product vectors.
+    // Note that only x, y value is used for interpolation.
+    Vec3f s[2];
+    for (int i = 0; i < 2; i++) {
+        s[i][0] = c[i] - a[i];
+        s[i][1] = b[i] - a[i];
+        s[i][2] = a[i] - p[i];
+    }
+
+    // Compute u, v in homogeneous coordinates.
+    Vec3f uv_homo = cross(s[0], s[1]);
+
+    // If uv_homo[2] is 0, then the triangle is degenerate, return an arbitrary negative result.
+    // Note that uv_homo[2] is float type.
+    if (abs(uv_homo[2]) < 1e-2) return Vec3f(-1, 1, 1);
     
-    // If abs(uv_homo[2]) < 1, it means the triangle is degenerate, as the points all have integer value. 
-    // In that case, return some arbitrary negative coordinates.
-    if (abs(uv_homo.z) < 1) return Vec3f(-1, 1, 1);
-    
-    // Normalize the homogenous coordinates.
-    return Vec3f(1. - (uv_homo.x - uv_homo.y) / uv_homo.z, uv_homo.x / uv_homo.z, uv_homo.y / uv_homo.z);
+    // Return the normalized (1 - u - v), u, v.
+    return Vec3f(1.f - (uv_homo.x + uv_homo.y) / uv_homo.z, uv_homo.y / uv_homo.z, uv_homo.x / uv_homo.z);
 }
 
-// Triangle drawing function.
-void triangle(Vec3i *triangle, int *zbuffer, TGAImage &image, TGAColor color) {
-    Vec2i triangle_2d[3];
+// Draw triangle.
+void triangle(Vec3f *triangle, float *zbuffer, TGAImage &image, TGAColor color) {
+    // Compute the bounding box of the triangle.
+    Vec2f bbox_min(numeric_limits<float>::max(), numeric_limits<float>::max());
+    Vec2f bbox_max(-numeric_limits<float>::max(), -numeric_limits<float>::max());
+    Vec2f image_max(image.get_width() - 1, image.get_height() - 1);
     for (int i = 0; i < 3; i++) {
-        triangle_2d[i] = Vec2i(triangle[i].x, triangle[i].y);
+        for (int j = 0; j < 2; j++) {
+            bbox_min[j] = max(0.f, min(bbox_min[j], triangle[i][j]));
+            bbox_max[j] = min(image_max[j], max(bbox_max[j], triangle[i][j]));
+        }
     }
-    // Bounding box.
-    int x_max = max(max(triangle[0].x, triangle[1].x), triangle[2].x);
-    int x_min = min(min(triangle[0].x, triangle[1].x), triangle[2].x);
-    int y_max = max(max(triangle[0].y, triangle[1].y), triangle[2].y);
-    int y_min = min(min(triangle[0].y, triangle[1].y), triangle[2].y);
 
-    for (int x = x_min; x <= x_max; x++) {
-        for (int y = y_min; y <= y_max; y++) {
-            Vec2i p = Vec2i(x, y);
-            // If not inside the triangle, skip.
-            Vec3f bc = barycentric(triangle_2d, p);
+    // Iterate each pixel inside the bounding box.
+    Vec3f p;
+    for (p.x = bbox_min.x; p.x <= bbox_max.x; p.x++) {
+        for (p.y = bbox_min.y; p.y <= bbox_max.y; p.y++) {
+            // If either of the barycentric coordinates is less than 0, it means the pixel is not inside the triangle, then skip.
+            Vec3f bc = barycentric(triangle[0], triangle[1], triangle[2], p);
             if (bc.x < 0 || bc.y < 0 || bc.z < 0) continue;
 
-            // z value is the interpolation of the 3 vertices using barycentric coordinates.
-            float z = triangle[0].z * bc.x + triangle[1].z * bc.y + triangle[2].z * bc.z;
-            if (zbuffer[x + y * width] < z) {
-                zbuffer[x + y * width] = (int)z;
-                image.set(x, y, color);
+            // Interpolate the z value by the barycentric coordinates.
+            p.z = triangle[0].z * bc.x + triangle[1].z * bc.y + triangle[2].z * bc.z;
+
+            // Z-buffering.
+            if (zbuffer[int(p.x + p.y * width)] < p.z) {
+                zbuffer[int(p.x + p.y * width)] = p.z;
+                image.set(p.x, p.y, color);
             }
         }
     }
 }
 
+// Convert the (normalized) world coordinate to the screen coordinate.
+// Note that the expected range of the world coordinate is [-1, 1];
+Vec3f world2screen(Vec3f v) {
+    return Vec3f((int)((v.x + 1.) * width / 2. + .5), (int)((v.y + 1.) * height / 2. + .5), v.z);
+}
+
 int main(int argc, char** argv) {
+    // Set image.
     TGAImage image(width, height, TGAImage::RGB);
 
+    // Load model.
     model = new Model("obj/african_head.obj");
+
+    // Set light direction.
     Vec3f light_dir(0, 0, -1);
 
-    // zbuffer to store depth info, initial value is set to minus infinity.
+    // Init z-buffer to minus infinity.
     // 1D-2D conversion: idx = x + y * width, x = idx % width, y = idx / width.
-    int *zbuffer = new int[width * height];
+    float *zbuffer = new float[width * height];
     for (int i = 0; i < width * height; i++) {
-        zbuffer[i] = numeric_limits<int>::min();
+        zbuffer[i] = -numeric_limits<float>::max();
     }
-
+    
+    // Draw each face from the model.
     for (int i = 0; i < model->nfaces(); i++) {
         vector<int> face = model->face(i);
-        Vec3i screen_coords[3];
+        
+        // Set world and screen coordinates.
+        Vec3f screen_coords[3];
         Vec3f world_coords[3];
         for (int j = 0; j < 3; j++) {
-            Vec3f v = model->vert(face[j]);
-            screen_coords[j] = Vec3i((v.x + 1.) * width / 2., (v.y + 1.) * height / 2., v.z);
-            world_coords[j] = v;
+            world_coords[j] = model->vert(face[j]);
+            screen_coords[j] = world2screen(world_coords[j]);
         }
-        Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]); 
+
+        // Compute the normal vector.
+        Vec3f n = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]); 
         n.normalize();
+
+        // Compute the intensity of the light.
         float intensity = n * light_dir;
+
+        // Backface culling.
         if (intensity > 0) {
             triangle(screen_coords, zbuffer, image, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
         }   
@@ -92,6 +124,8 @@ int main(int argc, char** argv) {
     // Origin at the left bottom corner of the image.
     image.flip_vertically();
     image.write_tga_file("output.tga");
+    
+    // Release memory.
     delete model;
     return 0;
 }
