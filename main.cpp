@@ -124,6 +124,33 @@ int main(int argc, char** argv) {
     // Origin at the left bottom corner of the image.
     image.flip_vertically();
     image.write_tga_file("output.tga");
+
+    // Also draw the related depth map.
+    TGAImage depth_map(width, height, TGAImage::RGB);
+
+    // Get the min and max value of the z-buffer, except for the pixels with value of minus infinity.
+    float zbuffer_min = numeric_limits<float>::max();
+    float zbuffer_max = -numeric_limits<float>::max();
+    for (int i = 0; i < width * height; i++) {
+        if (zbuffer[i] > -numeric_limits<float>::max()) {
+            zbuffer_min = min(zbuffer_min, zbuffer[i]);
+            zbuffer_max = max(zbuffer_max, zbuffer[i]);
+        }
+    }
+
+    for (int i = 0; i < width * height; i++) {
+        // Normalize the z-buffer to [0, 1], except for the pixels with value of minus infinity.
+        if (zbuffer[i] > -numeric_limits<float>::max()) {
+            zbuffer[i] = (zbuffer[i] - zbuffer_min) / (zbuffer_max - zbuffer_min);
+            int x = i % width;
+            int y = i / width;
+            depth_map.set(x, y, TGAColor(zbuffer[i] * 255, zbuffer[i] * 255, zbuffer[i] * 255, 255));
+        }
+    }
+
+    // Origin at the left bottom corner of the image.
+    depth_map.flip_vertically();
+    depth_map.write_tga_file("depth_map.tga");
     
     // Release memory.
     delete model;
