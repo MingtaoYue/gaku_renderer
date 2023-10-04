@@ -1,6 +1,7 @@
 #include <vector>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
@@ -30,7 +31,11 @@ Vec3f barycentric(Vec2i *triangle, Vec2i p) {
 }
 
 // Triangle drawing function.
-void triangle(Vec2i *triangle, TGAImage &image, TGAColor color) {
+void triangle(Vec3i *triangle, int *zbuffer, TGAImage &image, TGAColor color) {
+    Vec2i triangle_2d[3];
+    for (int i = 0; i < 3; i++) {
+        triangle_2d[i] = Vec2i(triangle[i].x, triangle[i].y);
+    }
     // Bounding box.
     int x_max = max(max(triangle[0].x, triangle[1].x), triangle[2].x);
     int x_min = min(min(triangle[0].x, triangle[1].x), triangle[2].x);
@@ -41,36 +46,46 @@ void triangle(Vec2i *triangle, TGAImage &image, TGAColor color) {
         for (int y = y_min; y <= y_max; y++) {
             Vec2i p = Vec2i(x, y);
             // If not inside the triangle, skip.
-            Vec3f bc = barycentric(triangle, p);
+            Vec3f bc = barycentric(triangle_2d, p);
             if (bc.x < 0 || bc.y < 0 || bc.z < 0) continue;
-            image.set(x, y, color);
+
+            // z value is the interpolation of the 3 vertices using barycentric coordinates.
+            float z = triangle[0].z * bc.x + triangle[1].z * bc.y + triangle[2].z * bc.z;
+            if (zbuffer[x + y * width] < z) {
+                zbuffer[x + y * width] = (int)z;
+                image.set(x, y, color);
+            }
         }
     }
 }
 
 int main(int argc, char** argv) {
     TGAImage image(width, height, TGAImage::RGB);
-    // Vec2i triangle0[3] = {Vec2i(10, 10), Vec2i(100, 30), Vec2i(190, 160)};
-    // triangle(triangle0, image, red);
 
-    // Draw the model.
     model = new Model("obj/african_head.obj");
     Vec3f light_dir(0, 0, -1);
 
+    // zbuffer to store depth info, initial value is set to minus infinity.
+    // 1D-2D conversion: idx = x + y * width, x = idx % width, y = idx / width.
+    int *zbuffer = new int[width * height];
+    for (int i = 0; i < width * height; i++) {
+        zbuffer[i] = numeric_limits<int>::min();
+    }
+
     for (int i = 0; i < model->nfaces(); i++) {
         vector<int> face = model->face(i);
-        Vec2i screen_coords[3];
+        Vec3i screen_coords[3];
         Vec3f world_coords[3];
         for (int j = 0; j < 3; j++) {
             Vec3f v = model->vert(face[j]);
-            screen_coords[j] = Vec2i((v.x + 1.) * width / 2., (v.y + 1.) * height / 2.);
+            screen_coords[j] = Vec3i((v.x + 1.) * width / 2., (v.y + 1.) * height / 2., v.z);
             world_coords[j] = v;
         }
         Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]); 
         n.normalize();
         float intensity = n * light_dir;
         if (intensity > 0) {
-            triangle(screen_coords, image, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
+            triangle(screen_coords, zbuffer, image, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
         }   
     }
 
