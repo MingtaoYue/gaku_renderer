@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
     TGAImage image(width, height, TGAImage::RGB);
 
     // Load model.
-    model = new Model("obj/african_head.obj");
+    model = new Model("obj/african_head/african_head.obj");
 
     // Set light direction.
     Vec3f light_dir(0, 0, -1);
