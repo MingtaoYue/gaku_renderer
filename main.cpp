@@ -1,7 +1,6 @@
 #include <vector>
 #include <cmath>
 #include <limits>
-#include <iostream>
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
@@ -47,63 +46,59 @@ Matrix viewport(int x, int y, int w, int h) {
     return m;
 }
 
-// Compute barycentric coordinates.
-// p = (1 - u - v) * a + u * b + v * c.
-Vec3f barycentric(Vec3i a, Vec3i b, Vec3i c, Vec3i p) {
-    // Set vectors for cross product.
-    // Note that only x, y value is used for interpolation.
-    Vec3f s[2];
-    for (int i = 0; i < 2; i++) {
-        s[i][0] = c[i] - a[i];
-        s[i][1] = b[i] - a[i];
-        s[i][2] = a[i] - p[i];
-    }
-
-    // Compute u, v in homogeneous coordinates.
-    Vec3f uv_homo = s[0] ^ s[1];
-
-    // If uv_homo[2] is 0, then the triangle is degenerate, return an arbitrary negative result.
-    // Note uv_homo[2] is float type, so we cannot use uv_homo[2] == 0.
-    if (abs(uv_homo[2]) < 1e-2) {
-        return Vec3f(-1, 1, 1);
-    }
-
-    // Caution for the order.
-    float u = uv_homo.y / uv_homo.z;
-    float v = uv_homo.x / uv_homo.z;
-
-    return Vec3f(1.f - u - v, u, v);
-}
-
 // Draw triangle.
 void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity, int *zbuffer) {
-    // Compute the bounding box of the triangle.
-    Vec2i bbox_min(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
-    Vec2i bbox_max(std::numeric_limits<int>::min(), std::numeric_limits<int>::min());
-    Vec2i image_max(WIDTH - 1, HEIGHT - 1);
-    for (int i = 0; i < 3; i++) {
-        bbox_min.x = std::max(0, std::min(bbox_min.x, triangle[i].x));
-        bbox_min.y = std::max(0, std::min(bbox_min.y, triangle[i].y));
-        bbox_max.x = std::min(image_max.x, std::max(bbox_max.x, triangle[i].x));
-        bbox_max.y = std::min(image_max.y, std::max(bbox_max.y, triangle[i].y));
+    Vec3i t0 = triangle[0];
+    Vec3i t1 = triangle[1];
+    Vec3i t2 = triangle[2];
+    Vec2i uv0 = texture[0];
+    Vec2i uv1 = texture[1];
+    Vec2i uv2 = texture[2];
+
+    // Ignore degenerate triangles.
+    if (t0.y == t1.y && t0.y == t2.y) {
+        return;
     }
 
+    // Sort vertices by y coordinate.
+    if (t0.y > t1.y) {
+        std::swap(t0, t1);
+        std::swap(uv0, uv1);
+    }
+    if (t0.y > t2.y) {
+        std::swap(t0, t2);
+        std::swap(uv0, uv2);
+    }
+    if (t1.y > t2.y) {
+        std::swap(t1, t2);
+        std::swap(uv1, uv2);
+    }
 
-    // Iterate each pixel inside the bounding box.
-    Vec3i p;
-    for (p.x = bbox_min.x; p.x <= bbox_max.x; p.x++) {
-        for (p.y = bbox_min.y; p.y <= bbox_max.y; p.y++) {
-            // If either of the barycentric coordinatesi less than 0, the pixel is not inside the triangle.
-            Vec3f bc = barycentric(triangle[0], triangle[1], triangle[2], p);
-            if (bc.x < 0 || bc.y < 0 || bc.z < 0) {
-                continue;
-            }
-            // Interpolate z value.
-            p.z = triangle[0].z * bc.x + triangle[1].z * bc.y + triangle[2].z * bc.z;
+    int total_height = t2.y - t0.y;
+    for (int i = 0; i < total_height; i++) {
+        bool second_half = i > (t1.y - t0.y) || t0.y == t1.y;
+        int segment_height = second_half ? t2.y - t1.y : t1.y - t0.y;
+        // Bilinear interpolation.
+        float alpha = (float)i / total_height;
+        float beta = second_half ? (float)(i - (t1.y - t0.y)) / segment_height : (float)i / segment_height;
+        Vec3i a = t0 + (t2 - t0) * alpha;
+        Vec3i b = second_half ? t1 + (t2 - t1) * beta : t0 + (t1 - t0) * beta;
+        Vec2i uv_a = uv0 + (uv2 - uv0) * alpha;
+        Vec2i uv_b = second_half ? uv1 + (uv2 - uv1) * beta : uv0 + (uv1 - uv0) * beta;
+        if (a.x > b.x) {
+            std::swap(a, b);
+            std::swap(uv_a, uv_b);
+        }
+        for (int j = a.x; j <= b.x; j++) {
+            float phi = a.x == b.x ? 1.f : (float)(j - a.x) / (b.x - a.x);
+            Vec3i p = Vec3f(a) + Vec3f(b - a) * phi;
+            Vec2i uv_p = uv_a + (uv_b - uv_a) * phi;
+            int idx = p.x + p.y * WIDTH;
             // z-buffering.
-            if (zbuffer[p.x + p.y * WIDTH] < p.z) {
-                zbuffer[p.x + p.y * WIDTH] = p.z;
-                image.set(p.x, p.y, TGAColor((int)(255 * intensity), (int)(255 * intensity), (int)(255 * intensity), 255));
+            if (zbuffer[idx] < p.z) {
+                zbuffer[idx] = p.z;
+                TGAColor color = model->diffuse(uv_p);
+                image.set(p.x, p.y, TGAColor(color.r * intensity, color.g * intensity, color.b * intensity));
             }
         }
     }
