@@ -1,26 +1,56 @@
 #include <vector>
 #include <cmath>
-#include <iostream>
 #include <limits>
-#include <algorithm>
+#include <iostream>
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
 
-using namespace std;
-
-const TGAColor white = TGAColor(255, 255, 255, 255);
-const TGAColor red = TGAColor(255, 0, 0, 255);
-const TGAColor blue = TGAColor(0, 0, 255, 255);
-
-const int width = 1000;
-const int height = 1000;
+// In pixels.
+const int WIDTH = 800;
+const int HEIGHT = 800;
+const int DEPTH = 255;
 
 Model *model = NULL;
+int *zbuffer = NULL;
+Vec3f light_dir(0, 0, -1);
+// Camera is towards negative z-axis.
+Vec3f camera(0, 0, 3);
+
+// Matrix of 4x1 (homogeneous coordinates) to vector of 3 (cartesian coordinates).
+Vec3f m2v(Matrix m) {
+    return Vec3f(m[0][0] / m[3][0], m[1][0] / m[3][0], m[2][0] / m[3][0]);
+}
+
+// Vector of 3 (cartesian coordinates) to matrix of 4x1 (homogeneous coordinates).
+Matrix v2m(Vec3f v) {
+    Matrix m(4, 1);
+    m[0][0] = v.x;
+    m[1][0] = v.y;
+    m[2][0] = v.z;
+    m[3][0] = 1.f;
+    return m;
+}
+
+// View port transformation.
+Matrix viewport(int x, int y, int w, int h) {
+    Matrix m = Matrix::identity(4);
+    // Scaling.
+    m[0][0] = w / 2.f;
+    m[1][1] = h / 2.f;
+    m[2][2] = DEPTH / 2.f;
+
+    // Translation.
+    m[0][3] = x + w / 2.f;
+    m[1][3] = y + h / 2.f;
+    m[2][3] = DEPTH / 2.f;
+    return m;
+}
 
 // Compute barycentric coordinates.
-Vec3f barycentric(Vec3f a, Vec3f b, Vec3f c, Vec3f p) {
-    // Set cross product vectors.
+// p = (1 - u - v) * a + u * b + v * c.
+Vec3f barycentric(Vec3i a, Vec3i b, Vec3i c, Vec3i p) {
+    // Set vectors for cross product.
     // Note that only x, y value is used for interpolation.
     Vec3f s[2];
     for (int i = 0; i < 2; i++) {
@@ -30,129 +60,111 @@ Vec3f barycentric(Vec3f a, Vec3f b, Vec3f c, Vec3f p) {
     }
 
     // Compute u, v in homogeneous coordinates.
-    Vec3f uv_homo = cross(s[0], s[1]);
+    Vec3f uv_homo = s[0] ^ s[1];
 
     // If uv_homo[2] is 0, then the triangle is degenerate, return an arbitrary negative result.
-    // Note that uv_homo[2] is float type.
-    if (abs(uv_homo[2]) < 1e-2) return Vec3f(-1, 1, 1);
-    
-    // Return the normalized (1 - u - v), u, v.
-    return Vec3f(1.f - (uv_homo.x + uv_homo.y) / uv_homo.z, uv_homo.y / uv_homo.z, uv_homo.x / uv_homo.z);
+    // Note uv_homo[2] is float type, so we cannot use uv_homo[2] == 0.
+    if (abs(uv_homo[2]) < 1e-2) {
+        return Vec3f(-1, 1, 1);
+    }
+
+    // Caution for the order.
+    float u = uv_homo.y / uv_homo.z;
+    float v = uv_homo.x / uv_homo.z;
+
+    return Vec3f(1.f - u - v, u, v);
 }
 
 // Draw triangle.
-void triangle(Vec3f *triangle, float *zbuffer, TGAImage &image, TGAColor color) {
+void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity, int *zbuffer) {
     // Compute the bounding box of the triangle.
-    Vec2f bbox_min(numeric_limits<float>::max(), numeric_limits<float>::max());
-    Vec2f bbox_max(-numeric_limits<float>::max(), -numeric_limits<float>::max());
-    Vec2f image_max(image.get_width() - 1, image.get_height() - 1);
+    Vec2i bbox_min(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+    Vec2i bbox_max(std::numeric_limits<int>::min(), std::numeric_limits<int>::min());
+    Vec2i image_max(WIDTH - 1, HEIGHT - 1);
     for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 2; j++) {
-            bbox_min[j] = max(0.f, min(bbox_min[j], triangle[i][j]));
-            bbox_max[j] = min(image_max[j], max(bbox_max[j], triangle[i][j]));
-        }
+        bbox_min.x = std::max(0, std::min(bbox_min.x, triangle[i].x));
+        bbox_min.y = std::max(0, std::min(bbox_min.y, triangle[i].y));
+        bbox_max.x = std::min(image_max.x, std::max(bbox_max.x, triangle[i].x));
+        bbox_max.y = std::min(image_max.y, std::max(bbox_max.y, triangle[i].y));
     }
 
+
     // Iterate each pixel inside the bounding box.
-    Vec3f p;
+    Vec3i p;
     for (p.x = bbox_min.x; p.x <= bbox_max.x; p.x++) {
         for (p.y = bbox_min.y; p.y <= bbox_max.y; p.y++) {
-            // If either of the barycentric coordinates is less than 0, it means the pixel is not inside the triangle, then skip.
+            // If either of the barycentric coordinatesi less than 0, the pixel is not inside the triangle.
             Vec3f bc = barycentric(triangle[0], triangle[1], triangle[2], p);
-            if (bc.x < 0 || bc.y < 0 || bc.z < 0) continue;
-
-            // Interpolate the z value by the barycentric coordinates.
+            if (bc.x < 0 || bc.y < 0 || bc.z < 0) {
+                continue;
+            }
+            // Interpolate z value.
             p.z = triangle[0].z * bc.x + triangle[1].z * bc.y + triangle[2].z * bc.z;
-
-            // Z-buffering.
-            if (zbuffer[int(p.x + p.y * width)] < p.z) {
-                zbuffer[int(p.x + p.y * width)] = p.z;
-                image.set(p.x, p.y, color);
+            // z-buffering.
+            if (zbuffer[p.x + p.y * WIDTH] < p.z) {
+                zbuffer[p.x + p.y * WIDTH] = p.z;
+                image.set(p.x, p.y, TGAColor((int)(255 * intensity), (int)(255 * intensity), (int)(255 * intensity), 255));
             }
         }
     }
 }
 
-// Convert the (normalized) world coordinate to the screen coordinate.
-// Note that the expected range of the world coordinate is [-1, 1];
-Vec3f world2screen(Vec3f v) {
-    return Vec3f((int)((v.x + 1.) * width / 2. + .5), (int)((v.y + 1.) * height / 2. + .5), v.z);
-}
-
 int main(int argc, char** argv) {
-    // Set image.
-    TGAImage image(width, height, TGAImage::RGB);
-
-    // Load model.
-    model = new Model("obj/african_head/african_head.obj");
-
-    // Set light direction.
-    Vec3f light_dir(0, 0, -1);
-
-    // Init z-buffer to minus infinity.
-    // 1D-2D conversion: idx = x + y * width, x = idx % width, y = idx / width.
-    float *zbuffer = new float[width * height];
-    for (int i = 0; i < width * height; i++) {
-        zbuffer[i] = -numeric_limits<float>::max();
+    if (argc == 2) {
+        model = new Model(argv[1]);
+    } else {
+        model = new Model("obj/african_head.obj");
     }
-    
-    // Draw each face from the model.
+
+    // Init zbuffer to minus infinity.
+    zbuffer = new int[WIDTH * HEIGHT];
+    for (int i = 0; i < WIDTH * HEIGHT; i++) {
+        zbuffer[i] = std::numeric_limits<int>::min();
+    }
+
+    // Perspective projection matrix.
+    Matrix persp_proj = Matrix::identity(4);
+    persp_proj[3][2] = -1.f / camera.z;
+
+    // View port transformation matrix.
+    Matrix view_port = viewport(WIDTH / 8, HEIGHT / 8, WIDTH * 3 / 4, HEIGHT * 3 / 4);
+
+    // Init output image.
+    TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
+
+    // Draw the model.
     for (int i = 0; i < model->nfaces(); i++) {
-        vector<int> face = model->face(i);
-        
-        // Set world and screen coordinates.
-        Vec3f screen_coords[3];
+        std::vector<int> face = model->face(i);
+        Vec3i screen_coords[3];
         Vec3f world_coords[3];
         for (int j = 0; j < 3; j++) {
-            world_coords[j] = model->vert(face[j]);
-            screen_coords[j] = world2screen(world_coords[j]);
+            Vec3f v = model->vert(face[j]);
+            world_coords[j] = v;
+            screen_coords[j] = m2v(view_port * persp_proj * v2m(v));
         }
 
-        // Compute the normal vector.
-        Vec3f n = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]); 
+        // Normal vector of the triangle.
+        Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
         n.normalize();
 
-        // Compute the intensity of the light.
+        // Intensity of the light.
         float intensity = n * light_dir;
 
         // Backface culling.
         if (intensity > 0) {
-            triangle(screen_coords, zbuffer, image, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
-        }   
+            // Get texture coordinates.
+            Vec2i uv[3];
+            for (int k = 0; k < 3; k++) {
+                uv[k] = model->uv(i, k);
+            }
+            triangle(screen_coords, uv, image, intensity, zbuffer);
+        }
     }
 
-    // Origin at the left bottom corner of the image.
     image.flip_vertically();
     image.write_tga_file("output.tga");
 
-    // Also draw the related depth map.
-    TGAImage depth_map(width, height, TGAImage::RGB);
-
-    // Get the min and max value of the z-buffer, except for the pixels with value of minus infinity.
-    float zbuffer_min = numeric_limits<float>::max();
-    float zbuffer_max = -numeric_limits<float>::max();
-    for (int i = 0; i < width * height; i++) {
-        if (zbuffer[i] > -numeric_limits<float>::max()) {
-            zbuffer_min = min(zbuffer_min, zbuffer[i]);
-            zbuffer_max = max(zbuffer_max, zbuffer[i]);
-        }
-    }
-
-    for (int i = 0; i < width * height; i++) {
-        // Normalize the z-buffer to [0, 1], except for the pixels with value of minus infinity.
-        if (zbuffer[i] > -numeric_limits<float>::max()) {
-            zbuffer[i] = (zbuffer[i] - zbuffer_min) / (zbuffer_max - zbuffer_min);
-            int x = i % width;
-            int y = i / width;
-            depth_map.set(x, y, TGAColor(zbuffer[i] * 255, zbuffer[i] * 255, zbuffer[i] * 255, 255));
-        }
-    }
-
-    // Origin at the left bottom corner of the image.
-    depth_map.flip_vertically();
-    depth_map.write_tga_file("depth_map.tga");
-    
-    // Release memory.
     delete model;
+    delete [] zbuffer;
     return 0;
 }
