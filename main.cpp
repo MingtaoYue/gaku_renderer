@@ -81,8 +81,9 @@ void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity,
         // Bilinear interpolation.
         float alpha = (float)i / total_height;
         float beta = second_half ? (float)(i - (t1.y - t0.y)) / segment_height : (float)i / segment_height;
-        Vec3i a = t0 + (t2 - t0) * alpha;
-        Vec3i b = second_half ? t1 + (t2 - t1) * beta : t0 + (t1 - t0) * beta;
+        Vec3i a = t0 + Vec3f(t2 - t0) * alpha;
+        // Caution about the int-float cast.
+        Vec3i b = second_half ? t1 + Vec3f(t2 - t1) * beta : t0 + Vec3f(t1 - t0) * beta;
         Vec2i uv_a = uv0 + (uv2 - uv0) * alpha;
         Vec2i uv_b = second_half ? uv1 + (uv2 - uv1) * beta : uv0 + (uv1 - uv0) * beta;
         if (a.x > b.x) {
@@ -90,7 +91,7 @@ void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity,
             std::swap(uv_a, uv_b);
         }
         for (int j = a.x; j <= b.x; j++) {
-            float phi = a.x == b.x ? 1.f : (float)(j - a.x) / (b.x - a.x);
+            float phi = a.x == b.x ? 1.f : (float)(j - a.x) / (float)(b.x - a.x);
             Vec3i p = Vec3f(a) + Vec3f(b - a) * phi;
             Vec2i uv_p = uv_a + (uv_b - uv_a) * phi;
             int idx = p.x + p.y * WIDTH;
