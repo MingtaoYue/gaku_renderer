@@ -12,24 +12,14 @@ const int DEPTH = 255;
 
 Model *model = NULL;
 int *zbuffer = NULL;
-Vec3f light_dir(0, 0, -1);
-// Camera is towards negative z-axis.
-Vec3f camera(0, 0, 3);
+Vec3f light_dir = Vec3f(1, -1, 1).normalize();
 
-// Matrix of 4x1 (homogeneous coordinates) to vector of 3 (cartesian coordinates).
-Vec3f m2v(Matrix m) {
-    return Vec3f(m[0][0] / m[3][0], m[1][0] / m[3][0], m[2][0] / m[3][0]);
-}
-
-// Vector of 3 (cartesian coordinates) to matrix of 4x1 (homogeneous coordinates).
-Matrix v2m(Vec3f v) {
-    Matrix m(4, 1);
-    m[0][0] = v.x;
-    m[1][0] = v.y;
-    m[2][0] = v.z;
-    m[3][0] = 1.f;
-    return m;
-}
+// Camera position, center of the scene, up vector.
+// The camera is looking at the center of the scene, the length of the look-at vector is the focal length.
+// up is perpendicular to the camera look-at vector.
+Vec3f camera(1, 1, 3);
+Vec3f center(0, 0, 0);
+Vec3f up(3, 0, -3);
 
 // View port transformation.
 Matrix viewport(int x, int y, int w, int h) {
@@ -43,6 +33,22 @@ Matrix viewport(int x, int y, int w, int h) {
     m[0][3] = x + w / 2.f;
     m[1][3] = y + h / 2.f;
     m[2][3] = DEPTH / 2.f;
+    return m;
+}
+
+Matrix lookat(Vec3f camera, Vec3f center, Vec3f up) {
+    // Camera look at minus z axis.
+    Vec3f z = (camera - center).normalize();
+    Vec3f y = up.normalize();
+    Vec3f x = (y ^ z).normalize();
+    Matrix m = Matrix::identity(4);
+    // Inverse of rotation matrix is its transpose.
+    for (int i = 0; i < 3; i++) {
+        m[0][i] = x[i];
+        m[1][i] = y[i];
+        m[2][i] = z[i];
+        m[i][3] = -center[i];
+    }
     return m;
 }
 
@@ -118,6 +124,12 @@ int main(int argc, char** argv) {
         zbuffer[i] = std::numeric_limits<int>::min();
     }
 
+    // Model transformation matrix.
+    Matrix model_trans = Matrix::identity(4);
+
+    // View (camera) transformation matrix.
+    Matrix view_trans = lookat(camera, center, up);
+
     // Perspective projection matrix.
     Matrix persp_proj = Matrix::identity(4);
     persp_proj[3][2] = -1.f / camera.z;
@@ -136,7 +148,7 @@ int main(int argc, char** argv) {
         for (int j = 0; j < 3; j++) {
             Vec3f v = model->vert(face[j]);
             world_coords[j] = v;
-            screen_coords[j] = m2v(view_port * persp_proj * v2m(v));
+            screen_coords[j] = Vec3f(view_port * persp_proj * view_trans * model_trans * Matrix(v));
         }
 
         // Normal vector of the triangle.
