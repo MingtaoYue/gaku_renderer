@@ -99,7 +99,7 @@ void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity,
             if (zbuffer[idx] < p.z) {
                 zbuffer[idx] = p.z;
                 TGAColor color = model->diffuse(uv_p);
-                image.set(p.x, p.y, TGAColor(color.r * intensity, color.g * intensity, color.b * intensity));
+                image.set(p.x, p.y, TGAColor(255 * intensity, 255 * intensity, 255 * intensity));
             }
         }
     }
