@@ -12,14 +12,14 @@ const int DEPTH = 255;
 
 Model *model = NULL;
 int *zbuffer = NULL;
-Vec3f light_dir = Vec3f(1, -1, 1).normalize();
+Vec3f light_dir = Vec3f(0, 0, -1).normalize();
 
 // Camera position, center of the scene, up vector.
 // The camera is looking at the center of the scene, the length of the look-at vector is the focal length.
 // up is perpendicular to the camera look-at vector.
-Vec3f camera(1, 1, 3);
+Vec3f camera(1, 0, 2);
 Vec3f center(0, 0, 0);
-Vec3f up(3, 0, -3);
+Vec3f up(0, 1, 0);
 
 // View port transformation.
 Matrix viewport(int x, int y, int w, int h) {
@@ -132,7 +132,8 @@ int main(int argc, char** argv) {
 
     // Perspective projection matrix.
     Matrix persp_proj = Matrix::identity(4);
-    persp_proj[3][2] = -1.f / camera.z;
+    // Focal length.
+    persp_proj[3][2] = -1.f / (center - camera).norm();
 
     // View port transformation matrix.
     Matrix view_port = viewport(WIDTH / 8, HEIGHT / 8, WIDTH * 3 / 4, HEIGHT * 3 / 4);
