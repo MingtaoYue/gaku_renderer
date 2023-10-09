@@ -12,7 +12,7 @@ const int DEPTH = 255;
 
 Model *model = NULL;
 int *zbuffer = NULL;
-Vec3f light_dir = Vec3f(0, 0, -1).normalize();
+Vec3f light_dir = Vec3f(1, 4, 2).normalize();
 
 // Camera position, center of the scene, up vector.
 // The camera is looking at the center of the scene, the length of the look-at vector is the focal length.
@@ -53,13 +53,16 @@ Matrix lookat(Vec3f camera, Vec3f center, Vec3f up) {
 }
 
 // Draw triangle.
-void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity, int *zbuffer) {
+void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float *intensity, int *zbuffer) {
     Vec3i t0 = triangle[0];
     Vec3i t1 = triangle[1];
     Vec3i t2 = triangle[2];
     Vec2i uv0 = texture[0];
     Vec2i uv1 = texture[1];
     Vec2i uv2 = texture[2];
+    float ity0 = intensity[0];
+    float ity1 = intensity[1];
+    float ity2 = intensity[2];
 
     // Ignore degenerate triangles.
     if (t0.y == t1.y && t0.y == t2.y) {
@@ -70,14 +73,17 @@ void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity,
     if (t0.y > t1.y) {
         std::swap(t0, t1);
         std::swap(uv0, uv1);
+        std::swap(ity0, ity1);
     }
     if (t0.y > t2.y) {
         std::swap(t0, t2);
         std::swap(uv0, uv2);
+        std::swap(ity0, ity2);
     }
     if (t1.y > t2.y) {
         std::swap(t1, t2);
         std::swap(uv1, uv2);
+        std::swap(ity1, ity2);
     }
 
     int total_height = t2.y - t0.y;
@@ -90,22 +96,26 @@ void triangle(Vec3i *triangle, Vec2i *texture, TGAImage &image, float intensity,
         Vec3i a = t0 + Vec3f(t2 - t0) * alpha;
         // Caution about the int-float cast.
         Vec3i b = second_half ? t1 + Vec3f(t2 - t1) * beta : t0 + Vec3f(t1 - t0) * beta;
+        float ity_a = ity0 + (ity2 - ity0) * alpha;
+        float ity_b = second_half ? ity1 + (ity2 - ity1) * beta : ity0 + (ity1 - ity0) * beta;
         Vec2i uv_a = uv0 + (uv2 - uv0) * alpha;
         Vec2i uv_b = second_half ? uv1 + (uv2 - uv1) * beta : uv0 + (uv1 - uv0) * beta;
         if (a.x > b.x) {
             std::swap(a, b);
             std::swap(uv_a, uv_b);
+            std::swap(ity_a, ity_b);
         }
         for (int j = a.x; j <= b.x; j++) {
             float phi = a.x == b.x ? 1.f : (float)(j - a.x) / (float)(b.x - a.x);
             Vec3i p = Vec3f(a) + Vec3f(b - a) * phi;
             Vec2i uv_p = uv_a + (uv_b - uv_a) * phi;
+            float ity_p = ity_a + (ity_b - ity_a) * phi;
             int idx = p.x + p.y * WIDTH;
             // z-buffering.
             if (zbuffer[idx] < p.z) {
                 zbuffer[idx] = p.z;
                 TGAColor color = model->diffuse(uv_p);
-                image.set(p.x, p.y, TGAColor(255 * intensity, 255 * intensity, 255 * intensity));
+                image.set(p.x, p.y, TGAColor(255, 255, 255) * ity_p);
             }
         }
     }
@@ -146,18 +156,15 @@ int main(int argc, char** argv) {
         std::vector<int> face = model->face(i);
         Vec3i screen_coords[3];
         Vec3f world_coords[3];
+        float intensity[3];
         for (int j = 0; j < 3; j++) {
             Vec3f v = model->vert(face[j]);
             world_coords[j] = v;
             screen_coords[j] = Vec3f(view_port * persp_proj * view_trans * model_trans * Matrix(v));
+            // Compute light intensity for each vertex (Gouraud shading).
+            Vec3f n = model->norm(i, j);
+            intensity[j] = n * light_dir;
         }
-
-        // Normal vector of the triangle.
-        Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
-        n.normalize();
-
-        // Intensity of the light.
-        float intensity = n * light_dir;
 
         // Backface culling.
         if (intensity > 0) {
