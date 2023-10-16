@@ -16,7 +16,7 @@ Vec3f light_dir = Vec3f(1, 4, 2).normalize();
 
 // Camera position, center of the scene, up vector.
 // The camera is looking at the center of the scene, the length of the look-at vector is the focal length.
-// up is perpendicular to the camera look-at vector.
+// up might NOT be exactly perpendicular to the camera look-at vector, but is perpendicular to the rendered image x-axis.
 Vec3f camera(1, 0, 2);
 Vec3f center(0, 0, 0);
 Vec3f up(0, 1, 0);
@@ -36,11 +36,12 @@ Matrix viewport(int x, int y, int w, int h) {
     return m;
 }
 
+// Camera transformation.
 Matrix lookat(Vec3f camera, Vec3f center, Vec3f up) {
     // Camera look at minus z axis.
     Vec3f z = (camera - center).normalize();
-    Vec3f y = up.normalize();
-    Vec3f x = (y ^ z).normalize();
+    Vec3f x = (up ^ z).normalize();
+    Vec3f y = (z ^ x).normalize();
     Matrix m = Matrix::identity(4);
     // Inverse of rotation matrix is its transpose.
     for (int i = 0; i < 3; i++) {
