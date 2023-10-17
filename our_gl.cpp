@@ -4,10 +4,28 @@
 #include "our_gl.h"
 
 Matrix ModelView;
-Matrix Projection;
 Matrix Viewport;
+Matrix Projection;
 
 IShader::~IShader() {}
+
+void viewport(int x, int y, int w, int h) {
+    Viewport = Matrix::identity();
+    // scaling.
+    Viewport[0][0] = w / 2.f;
+    Viewport[1][1] = h / 2.f;
+    Viewport[2][2] = 255.f / 2.f;
+
+    // translation.
+    Viewport[0][3] = x + w / 2.f;
+    Viewport[1][3] = y + h / 2.f;
+    Viewport[2][3] = 255.f / 2.f;
+}
+
+void projection(float coeff) {
+    Projection = Matrix::identity();
+    Projection[3][2] = coeff;
+}
 
 void lookat(Vec3f eye, Vec3f center, Vec3f up) {
     Vec3f z = (eye - center).normalize();
@@ -21,24 +39,6 @@ void lookat(Vec3f eye, Vec3f center, Vec3f up) {
         ModelView[2][i] = z[i];
         ModelView[i][3] = -center[i];
     }
-}
-
-void projection(float coeff) {
-    Projection = Matrix::identity();
-    Projection[3][2] = coeff;
-}
-
-void viewport(int x, int y, int w, int h) {
-    Viewport = Matrix::identity();
-    // scaling.
-    Viewport[0][0] = w / 2.f;
-    Viewport[1][1] = h / 2.f;
-    Viewport[2][2] = 255.f / 2.f;
-
-    // translation.
-    Viewport[0][3] = x + w / 2.f;
-    Viewport[1][3] = y + h / 2.f;
-    Viewport[2][3] = 255.f / 2.f;
 }
 
 Vec3f barycentric(Vec2f A, Vec2f B, Vec2f C, Vec2f P) {
