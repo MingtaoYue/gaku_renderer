@@ -17,8 +17,10 @@ Vec3f up(0, 1, 0);
 
 struct GouraudShader: public IShader {
     Vec3f varying_intensity; // written by vertex shader, read by fragment shader.
+    mat<2, 3, float> varying_uv;
 
     virtual Vec4f vertex(int iface, int nthvert) {
+        varying_uv.set_col(nthvert, model->uv(iface, nthvert));
         Vec4f gl_Vertex = embed<4>(model->vert(iface, nthvert));
         gl_Vertex = Viewport * Projection * ModelView * gl_Vertex;
         varying_intensity[nthvert] = std::max(0.f, model->normal(iface, nthvert) * light_dir);
@@ -27,17 +29,8 @@ struct GouraudShader: public IShader {
 
     virtual bool fragment(Vec3f bar, TGAColor &color) {
         float intensity = varying_intensity * bar;
-        if (intensity > 0.8)
-            intensity = 1;
-        else if (intensity > 0.6)
-            intensity = 0.8;
-        else if (intensity > 0.4)
-            intensity = 0.6;
-        else if (intensity > 0.2)
-            intensity = 0.4;
-        else
-            intensity = 0;
-        color = TGAColor(0, 255, 100) * intensity;
+        Vec2f uv = varying_uv * bar;
+        color = model->diffuse(uv) * intensity;
         return false;
     }
 };
