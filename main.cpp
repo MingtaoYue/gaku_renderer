@@ -27,7 +27,17 @@ struct GouraudShader: public IShader {
 
     virtual bool fragment(Vec3f bar, TGAColor &color) {
         float intensity = varying_intensity * bar;
-        color = TGAColor(255, 255, 255) * intensity;
+        if (intensity > 0.8)
+            intensity = 1;
+        else if (intensity > 0.6)
+            intensity = 0.8;
+        else if (intensity > 0.4)
+            intensity = 0.6;
+        else if (intensity > 0.2)
+            intensity = 0.4;
+        else
+            intensity = 0;
+        color = TGAColor(0, 255, 100) * intensity;
         return false;
     }
 };
