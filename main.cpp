@@ -15,7 +15,7 @@ Vec3f eye(0, -1, 3);
 Vec3f center(0, 0, 0);
 Vec3f up(0, 1, 0);
 
-struct Shader: public IShader {
+struct BlinnPhongShader: public IShader {
     mat<2, 3, float> varying_uv;
     // MVP matrix.
     mat<4, 4, float> uniform_M;
@@ -33,8 +33,15 @@ struct Shader: public IShader {
         Vec2f uv = varying_uv * bar;
         Vec3f n = proj<3>(uniform_MIT * embed<4>(model->normal(uv))).normalize();
         Vec3f l = proj<3>(uniform_M * embed<4>(light_dir)).normalize();
-        float intensity = std::max(0.f, n * l);
-        color = model->diffuse(uv) * intensity;
+        // Reflected light.
+        Vec3f r = (n * (n * l *2.f) - l).normalize();
+        float spec = std::pow(std::max(r.z, 0.0f), model->specular(uv));
+        float diff = std::max(0.f, n * l);
+        TGAColor c = model->diffuse(uv);
+        color = c;
+        for (int i = 0; i < 3; i++) {
+            color[i] = std::min<float>(5 + c[i] * (diff + .6 * spec), 255);
+        }
         return false;
     }
 };
@@ -83,7 +90,7 @@ int main(int argc, char** argv) {
     TGAImage image(width, height, TGAImage::RGB);
     TGAImage zbuffer(width, height, TGAImage::GRAYSCALE);
 
-    Shader shader;
+    BlinnPhongShader shader;
     shader.uniform_M = Projection * ModelView;
     shader.uniform_MIT = (Projection * ModelView).invert_transpose();
     for (int i = 0; i < model->nfaces(); i++) {
