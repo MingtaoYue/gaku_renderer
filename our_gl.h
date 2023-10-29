@@ -9,7 +9,7 @@ extern Matrix Viewport;
 
 void lookat(Vec3f eye, Vec3f center, Vec3f up);
 void viewport(int x, int y, int w, int h);
-// coeff = -1/c, where c is focal length. 0 means orthographic projection.
+// coeff = -1/c, where c is focal length, 0 indicates orthographic projection
 void projection(float coeff=0.f);
 
 struct IShader {
@@ -20,4 +20,3 @@ struct IShader {
 
 void triangle(mat<4,3,float> &pts, IShader &shader, TGAImage &image, float *zbuffer);
 #endif
-

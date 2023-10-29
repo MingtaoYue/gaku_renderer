@@ -10,46 +10,59 @@ Matrix Viewport;
 IShader::~IShader() {}
 
 void lookat(Vec3f eye, Vec3f center, Vec3f up) {
+    // camera looks at -z direction
     Vec3f z = (eye - center).normalize();
     Vec3f x = cross(up, z).normalize();
+    // up may not be perpendicular to z
     Vec3f y = cross(z, x).normalize();
-    Matrix Minv = Matrix::identity();
-    Matrix Tr   = Matrix::identity();
-    for (int i=0; i<3; i++) {
-        Minv[0][i] = x[i];
-        Minv[1][i] = y[i];
-        Minv[2][i] = z[i];
-        Tr[i][3] = -center[i];
+    Matrix rotation = Matrix::identity();
+    Matrix translation = Matrix::identity();
+    for (int i = 0; i < 3; i++) {
+        // the rotation matrix from world to camera is the inverse of that from camera to world, for rotation matrix, inverse is equal to transpose
+        rotation[0][i] = x[i];
+        rotation[1][i] = y[i];
+        rotation[2][i] = z[i];
+        translation[i][3] = -eye[i];
     }
-    ModelView = Minv*Tr;
+    ModelView = rotation * translation;
 }
 
 void projection(float coeff) {
     Projection = Matrix::identity();
+    // coeff = -1/c, where c is focal length, 0 indicates orthographic projection
     Projection[3][2] = coeff;
 }
 
+// set from xyz: [-1, 1] to x: [x, x + w], y: [y, y + h] and z: [0, 1]
 void viewport(int x, int y, int w, int h) {
     Viewport = Matrix::identity();
-    Viewport[0][3] = x+w/2.f;
-    Viewport[1][3] = y+h/2.f;
-    Viewport[2][3] = 1.f;
-    Viewport[0][0] = w/2.f;
-    Viewport[1][1] = h/2.f;
-    Viewport[2][2] = 0;
+    // scaling
+    Viewport[0][0] = w / 2.f;
+    Viewport[1][1] = h / 2.f;
+    Viewport[2][2] = 0.5;
+
+    // translation
+    Viewport[0][3] = x + w / 2.f;
+    Viewport[1][3] = y + h / 2.f;
+    Viewport[2][3] = 0.5;
 }
 
 Vec3f barycentric(Vec2f A, Vec2f B, Vec2f C, Vec2f P) {
     Vec3f s[2];
-    for (int i=2; i--; ) {
+    for (int i = 0; i < 2; i++) {
         s[i][0] = C[i]-A[i];
         s[i][1] = B[i]-A[i];
         s[i][2] = A[i]-P[i];
     }
-    Vec3f u = cross(s[0], s[1]);
-    if (std::abs(u[2])>1e-2) // dont forget that u[2] is integer. If it is zero then triangle ABC is degenerate
-        return Vec3f(1.f-(u.x+u.y)/u.z, u.y/u.z, u.x/u.z);
-    return Vec3f(-1,1,1); // in this case generate negative coordinates, it will be thrown away by the rasterizator
+    Vec3f coeff = cross(s[0], s[1]);
+
+    // if coeff[2] is 0 (note that it is a float), the triangle is degenerate, return a negative value and the rasterizer will ignore it
+    if (std::abs(coeff[2]) < 1e-2) {
+        return Vec3f(-1,1,1);
+    }
+    float u = coeff.y/coeff.z;
+    float v = coeff.x/coeff.z;
+    return Vec3f(1.f - u - v, u, v);
 }
 
 void triangle(mat<4,3,float> &clipc, IShader &shader, TGAImage &image, float *zbuffer) {

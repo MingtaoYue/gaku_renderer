@@ -6,17 +6,23 @@
 #include "geometry.h"
 #include "our_gl.h"
 
-Model *model        = NULL;
+Model *model = NULL;
 
-const int width  = 800;
+// pixel size of the output image
+const int width = 800;
 const int height = 800;
 
+// light direction
 Vec3f light_dir(1,1,1);
-Vec3f       eye(1,1,3);
-Vec3f    center(0,0,0);
-Vec3f        up(0,1,0);
 
-struct Shader : public IShader {
+// camera position
+Vec3f eye(1,1,3);
+// center of the scene, length from the camera to the center is the focal length
+Vec3f center(0,0,0);
+// camera up vector, may not be perpendicular to the view vector
+Vec3f up(0,1,0);
+
+struct Shader: public IShader {
     mat<2,3,float> varying_uv;  // triangle uv coordinates, written by the vertex shader, read by the fragment shader
     mat<4,3,float> varying_tri; // triangle coordinates (clip coordinates), written by VS, read by FS
     mat<3,3,float> varying_nrm; // normal per vertex to be interpolated by FS
@@ -60,33 +66,42 @@ struct Shader : public IShader {
 };
 
 int main(int argc, char** argv) {
-    if (2>argc) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+    if (argc < 2) {
+        std::cerr << "Enter model path such as \"obj/african_head.obj\"" << std::endl;
         return 1;
     }
 
-    float *zbuffer = new float[width*height];
-    for (int i=width*height; i--; zbuffer[i] = -std::numeric_limits<float>::max());
+    // initialize the zbuffer, depth is set to negative infinity
+    float *zbuffer = new float[width * height];
+    for (int i = 0; i < width * height; i++) {
+        zbuffer[i] = -std::numeric_limits<float>::max();
+    }
 
-    TGAImage frame(width, height, TGAImage::RGB);
+    // output image
+    TGAImage image(width, height, TGAImage::RGB);
+
+    // (model,) view, projection, viewport matrices
     lookat(eye, center, up);
-    viewport(width/8, height/8, width*3/4, height*3/4);
-    projection(-1.f/(eye-center).norm());
-    light_dir = proj<3>((Projection*ModelView*embed<4>(light_dir, 0.f))).normalize();
+    projection(-1.f / (eye - center).norm());
+    viewport(0, 0, width, height);
+    
+    // transformed light direction
+    light_dir = proj<3>((Projection * ModelView * embed<4>(light_dir, 0.f))).normalize();
 
-    for (int m=1; m<argc; m++) {
+    for (int m = 1; m < argc; m++) {
         model = new Model(argv[m]);
         Shader shader;
-        for (int i=0; i<model->nfaces(); i++) {
-            for (int j=0; j<3; j++) {
+        for (int i = 0; i < model->nfaces(); i++) {
+            for (int j = 0; j < 3; j++) {
                 shader.vertex(i, j);
             }
-            triangle(shader.varying_tri, shader, frame, zbuffer);
+            triangle(shader.varying_tri, shader, image, zbuffer);
         }
         delete model;
     }
-    frame.flip_vertically(); // to place the origin in the bottom left corner of the image
-    frame.write_tga_file("framebuffer.tga");
+    // place the origin in the bottom left corner of the image
+    image.flip_vertically();
+    image.write_tga_file("output.tga");
 
     delete [] zbuffer;
     return 0;
