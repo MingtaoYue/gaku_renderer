@@ -23,27 +23,39 @@ Vec3f center(0,0,0);
 Vec3f up(0,1,0);
 
 struct Shader: public IShader {
-    mat<2,3,float> varying_uv;  // triangle uv coordinates, written by the vertex shader, read by the fragment shader
-    mat<4,3,float> varying_tri; // triangle coordinates (clip coordinates), written by VS, read by FS
-    mat<3,3,float> varying_nrm; // normal per vertex to be interpolated by FS
-    mat<3,3,float> ndc_tri;     // triangle in normalized device coordinates
+    // varying- variables are set by the vertex shader and interpolated by the fragment shader
+    // texture coordinates
+    mat<2,3,float> varying_uv;
+    // triangle coordinates (clip coordinates)
+    mat<4,3,float> varying_tri;
+    // normal vector
+    mat<3,3,float> varying_nrm;
+    // triangle coordinates in normalized device coordinates
+    mat<3,3,float> varying_ndc_tri;
 
     virtual Vec4f vertex(int iface, int nthvert) {
-        varying_uv.set_col(nthvert, model->uv(iface, nthvert));
-        varying_nrm.set_col(nthvert, proj<3>((Projection*ModelView).invert_transpose()*embed<4>(model->normal(iface, nthvert), 0.f)));
-        Vec4f gl_Vertex = Projection*ModelView*embed<4>(model->vert(iface, nthvert));
+        // transform the vertex coordinates from world space to canonical view volume (viewport is not applied yet)
+        Vec4f gl_Vertex = Projection * ModelView * embed<4>(model->vert(iface, nthvert));
         varying_tri.set_col(nthvert, gl_Vertex);
-        ndc_tri.set_col(nthvert, proj<3>(gl_Vertex/gl_Vertex[3]));
+
+        // note that the transformation matrix of normal vector is the inverse transpose of the transformation matrix of vertex
+        varying_nrm.set_col(nthvert, proj<3>((Projection * ModelView).invert_transpose() * embed<4>(model->normal(iface, nthvert), 0.f)));
+
+        // texture coordinates
+        varying_uv.set_col(nthvert, model->uv(iface, nthvert));
+        
+        // homogeneous to cartesian coordinates
+        varying_ndc_tri.set_col(nthvert, proj<3>(gl_Vertex / gl_Vertex[3]));
         return gl_Vertex;
     }
 
-    virtual bool fragment(Vec3f bar, TGAColor &color) {
-        Vec3f bn = (varying_nrm*bar).normalize();
-        Vec2f uv = varying_uv*bar;
+    virtual bool fragment(Vec3f bc, TGAColor &color) {
+        Vec3f bn = (varying_nrm*bc).normalize();
+        Vec2f uv = varying_uv*bc;
 
         mat<3,3,float> A;
-        A[0] = ndc_tri.col(1) - ndc_tri.col(0);
-        A[1] = ndc_tri.col(2) - ndc_tri.col(0);
+        A[0] = varying_ndc_tri.col(1) - varying_ndc_tri.col(0);
+        A[1] = varying_ndc_tri.col(2) - varying_ndc_tri.col(0);
         A[2] = bn;
 
         mat<3,3,float> AI = A.invert();
@@ -85,9 +97,10 @@ int main(int argc, char** argv) {
     projection(-1.f / (eye - center).norm());
     viewport(0, 0, width, height);
     
-    // transformed light direction
+    // transform the light direction
     light_dir = proj<3>((Projection * ModelView * embed<4>(light_dir, 0.f))).normalize();
 
+    // draw each triangle of each model
     for (int m = 1; m < argc; m++) {
         model = new Model(argv[m]);
         Shader shader;

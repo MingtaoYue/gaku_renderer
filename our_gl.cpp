@@ -65,32 +65,43 @@ Vec3f barycentric(Vec2f A, Vec2f B, Vec2f C, Vec2f P) {
     return Vec3f(1.f - u - v, u, v);
 }
 
-void triangle(mat<4,3,float> &clipc, IShader &shader, TGAImage &image, float *zbuffer) {
-    mat<3,4,float> pts  = (Viewport*clipc).transpose(); // transposed to ease access to each of the points
-    mat<3,2,float> pts2;
-    for (int i=0; i<3; i++) pts2[i] = proj<2>(pts[i]/pts[i][3]);
+void triangle(mat<4,3,float> &tri_clip, IShader &shader, TGAImage &image, float *zbuffer) {
+    // clip coordinates to screen coordinates, transpose for easy access
+    mat<3,4,float> pts  = (Viewport * tri_clip).transpose();
+    // convert 3d homogeneous coordinates to 2d cartesian coordinates
+    mat<3,2,float> pts_xy;
+    for (int i = 0; i < 3; i++) {
+        pts_xy[i] = proj<2>(pts[i] / pts[i][3]);
+    }
 
-    Vec2f bboxmin( std::numeric_limits<float>::max(),  std::numeric_limits<float>::max());
+    // init bounding box
+    Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
     Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
-    Vec2f clamp(image.get_width()-1, image.get_height()-1);
-    for (int i=0; i<3; i++) {
-        for (int j=0; j<2; j++) {
-            bboxmin[j] = std::max(0.f,      std::min(bboxmin[j], pts2[i][j]));
-            bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts2[i][j]));
+    // image size
+    Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
+    // set bounding box
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 2; j++) {
+            bboxmin[j] = std::max(0.f, std::min(bboxmin[j], pts_xy[i][j]));
+            bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts_xy[i][j]));
         }
     }
+
+    // iterate over bounding box
     Vec2i P;
     TGAColor color;
-    for (P.x=bboxmin.x; P.x<=bboxmax.x; P.x++) {
-        for (P.y=bboxmin.y; P.y<=bboxmax.y; P.y++) {
-            Vec3f bc_screen  = barycentric(pts2[0], pts2[1], pts2[2], P);
-            Vec3f bc_clip    = Vec3f(bc_screen.x/pts[0][3], bc_screen.y/pts[1][3], bc_screen.z/pts[2][3]);
-            bc_clip = bc_clip/(bc_clip.x+bc_clip.y+bc_clip.z);
-            float frag_depth = clipc[2]*bc_clip;
-            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0 || zbuffer[P.x+P.y*image.get_width()]>frag_depth) continue;
-            bool discard = shader.fragment(bc_clip, color);
+    for (P.x = bboxmin.x; P.x <= bboxmax.x; P.x++) {
+        for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++) {
+            Vec3f bc = barycentric(pts_xy[0], pts_xy[1], pts_xy[2], P);
+            float frag_depth = tri_clip[2] * bc;
+            // if the fragment is outside the triangle, or the depth is larger than the current depth in zbuffer, ignore it
+            if (bc.x<0 || bc.y<0 || bc.z<0 || zbuffer[P.x + P.y * image.get_width()] > frag_depth) {
+                continue;
+            }
+            // the fragment shader determines the color of the fragment and whether to discard it
+            bool discard = shader.fragment(bc, color);
             if (!discard) {
-                zbuffer[P.x+P.y*image.get_width()] = frag_depth;
+                zbuffer[P.x + P.y * image.get_width()] = frag_depth;
                 image.set(P.x, P.y, color);
             }
         }
