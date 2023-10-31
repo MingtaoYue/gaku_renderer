@@ -50,28 +50,33 @@ struct Shader: public IShader {
     }
 
     virtual bool fragment(Vec3f bc, TGAColor &color) {
-        Vec3f bn = (varying_nrm*bc).normalize();
-        Vec2f uv = varying_uv*bc;
+        // interpolate the normal vector and texture coordinates, normal vector is also the k vector of the Darboux basis
+        Vec3f bn = (varying_nrm * bc).normalize();
+        Vec2f uv = varying_uv * bc;
 
+        // set matrix A to compute Darboux basis (tangent space)
         mat<3,3,float> A;
         A[0] = varying_ndc_tri.col(1) - varying_ndc_tri.col(0);
         A[1] = varying_ndc_tri.col(2) - varying_ndc_tri.col(0);
         A[2] = bn;
+        mat<3,3,float> A_inverse = A.invert();
 
-        mat<3,3,float> AI = A.invert();
+        // compute Darboux basis i, j which are gradients of u, v
+        Vec3f i = A_inverse * Vec3f(varying_uv[0][1] - varying_uv[0][0], varying_uv[0][2] - varying_uv[0][0], 0);
+        Vec3f j = A_inverse * Vec3f(varying_uv[1][1] - varying_uv[1][0], varying_uv[1][2] - varying_uv[1][0], 0);
 
-        Vec3f i = AI * Vec3f(varying_uv[0][1] - varying_uv[0][0], varying_uv[0][2] - varying_uv[0][0], 0);
-        Vec3f j = AI * Vec3f(varying_uv[1][1] - varying_uv[1][0], varying_uv[1][2] - varying_uv[1][0], 0);
+        // set Darboux basis
+        mat<3,3,float> darboux_basis;
+        darboux_basis.set_col(0, i.normalize());
+        darboux_basis.set_col(1, j.normalize());
+        darboux_basis.set_col(2, bn);
 
-        mat<3,3,float> B;
-        B.set_col(0, i.normalize());
-        B.set_col(1, j.normalize());
-        B.set_col(2, bn);
+        // transform the normal vector from Darboux basis to world space
+        Vec3f n = (darboux_basis * model->normal(uv)).normalize();
 
-        Vec3f n = (B*model->normal(uv)).normalize();
-
-        float diff = std::max(0.f, n*light_dir);
-        color = model->diffuse(uv)*diff;
+        // diffusion
+        float diff = std::max(0.f, n * light_dir);
+        color = model->diffuse(uv) * diff;
 
         return false;
     }
