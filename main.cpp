@@ -7,20 +7,42 @@
 #include "our_gl.h"
 
 Model *model = NULL;
+float *shadowbuffer = NULL;
 
 // pixel size of the output image
 const int width = 800;
 const int height = 800;
 
-// light direction
-Vec3f light_dir(1,1,1);
+// light direction (parallel light)
+Vec3f light_dir(1, 1, 0);
 
 // camera position
-Vec3f eye(1,1,3);
+Vec3f eye(1,1,4);
 // center of the scene, length from the camera to the center is the focal length
 Vec3f center(0,0,0);
 // camera up vector, may not be perpendicular to the view vector
 Vec3f up(0,1,0);
+
+struct DepthShader: public IShader {
+    mat<3, 3, float> varying_tri;
+
+    DepthShader() {
+        varying_tri = mat<3, 3, float>();
+    }
+
+    virtual Vec4f vertex(int iface, int nthvert) {
+        Vec4f gl_Vertex = embed<4>(model->vert(iface, nthvert));
+        gl_Vertex = Viewport * Projection * ModelView * gl_Vertex;
+        varying_tri.set_col(nthvert, proj<3>(gl_Vertex / gl_Vertex[3]));
+        return gl_Vertex;
+    }
+
+    virtual bool fragment(Vec3f bar, TGAColor &color) {
+        Vec3f p = varying_tri * bar;
+        color = TGAColor(255, 255, 255) * (p.z / depth);
+        return false;
+    }
+};
 
 struct Shader: public IShader {
     // varying- variables are set by the vertex shader and interpolated by the fragment shader
@@ -88,40 +110,44 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // initialize the zbuffer, depth is set to negative infinity
+    // initialize the zbuffer and shadow buffer, depth is set to negative infinity
     float *zbuffer = new float[width * height];
+    shadowbuffer = new float[width * height];
     for (int i = 0; i < width * height; i++) {
         zbuffer[i] = -std::numeric_limits<float>::max();
+        shadowbuffer[i] = -std::numeric_limits<float>::max();
     }
 
-    // output image
-    TGAImage image(width, height, TGAImage::RGB);
-
-    // (model,) view, projection, viewport matrices
-    lookat(eye, center, up);
-    projection(-1.f / (eye - center).norm());
-    viewport(0, 0, width, height);
+    model = new Model(argv[1]);
+    light_dir.normalize();
     
-    // transform the light direction
-    light_dir = proj<3>((Projection * ModelView * embed<4>(light_dir, 0.f))).normalize();
-
-    // draw each triangle of each model
-    for (int m = 1; m < argc; m++) {
-        model = new Model(argv[m]);
-        Shader shader;
+    // render the shadow buffer
+    {
+        TGAImage depthimage(width, height, TGAImage::RGB);
+        // place the camera at the light source position, here the position is equal to the direction
+        lookat(light_dir, center, up);
+        // focal length is set to infinity to achieve parallel light
+        projection(0);
+        viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
+        
+        DepthShader depthshader;
+        Vec4f screen_coords[3];
         for (int i = 0; i < model->nfaces(); i++) {
             for (int j = 0; j < 3; j++) {
-                shader.vertex(i, j);
+                screen_coords[j] = depthshader.vertex(i, j);
             }
-            triangle(shader.varying_tri, shader, image, zbuffer);
+            // shadow buffer is the zbuffer when the camera is at the light source position
+            triangle(screen_coords, depthshader, depthimage, shadowbuffer);
         }
-        delete model;
+        depthimage.flip_vertically();
+        depthimage.write_tga_file("depthimage.tga");
     }
-    // place the origin in the bottom left corner of the image
-    image.flip_vertically();
-    image.write_tga_file("output.tga");
 
+    Matrix M = Viewport * Projection * ModelView;
+
+    delete model;
     delete [] zbuffer;
+    delete [] shadowbuffer;
     return 0;
 }
 
