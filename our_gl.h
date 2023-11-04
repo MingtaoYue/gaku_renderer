@@ -6,6 +6,7 @@
 extern Matrix ModelView;
 extern Matrix Projection;
 extern Matrix Viewport;
+const float depth = 2000.f;
 
 void lookat(Vec3f eye, Vec3f center, Vec3f up);
 void viewport(int x, int y, int w, int h);
@@ -18,5 +19,5 @@ struct IShader {
     virtual bool fragment(Vec3f bar, TGAColor &color) = 0;
 };
 
-void triangle(mat<4,3,float> &pts, IShader &shader, TGAImage &image, float *zbuffer);
+void triangle(Vec4f *pts, IShader &shader, TGAImage &image, float *zbuffer);
 #endif

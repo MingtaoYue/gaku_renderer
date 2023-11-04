@@ -15,16 +15,15 @@ void lookat(Vec3f eye, Vec3f center, Vec3f up) {
     Vec3f x = cross(up, z).normalize();
     // up may not be perpendicular to z
     Vec3f y = cross(z, x).normalize();
-    Matrix rotation = Matrix::identity();
-    Matrix translation = Matrix::identity();
+    ModelView = Matrix::identity();
     for (int i = 0; i < 3; i++) {
         // the rotation matrix from world to camera is the inverse of that from camera to world, for rotation matrix, inverse is equal to transpose
-        rotation[0][i] = x[i];
-        rotation[1][i] = y[i];
-        rotation[2][i] = z[i];
-        translation[i][3] = -eye[i];
+        ModelView[0][i] = x[i];
+        ModelView[1][i] = y[i];
+        ModelView[2][i] = z[i];
+        // translation
+        ModelView[i][3] = -eye[i];
     }
-    ModelView = rotation * translation;
 }
 
 void projection(float coeff) {
@@ -39,7 +38,7 @@ void viewport(int x, int y, int w, int h) {
     // scaling
     Viewport[0][0] = w / 2.f;
     Viewport[1][1] = h / 2.f;
-    Viewport[2][2] = 0.5;
+    Viewport[2][2] = depth / 2.f;
 
     // translation
     Viewport[0][3] = x + w / 2.f;
@@ -65,25 +64,15 @@ Vec3f barycentric(Vec2f A, Vec2f B, Vec2f C, Vec2f P) {
     return Vec3f(1.f - u - v, u, v);
 }
 
-void triangle(mat<4,3,float> &tri_clip, IShader &shader, TGAImage &image, float *zbuffer) {
-    // clip coordinates to screen coordinates, transpose for easy access
-    mat<3,4,float> pts  = (Viewport * tri_clip).transpose();
-    // convert 3d homogeneous coordinates to 2d cartesian coordinates
-    mat<3,2,float> pts_xy;
-    for (int i = 0; i < 3; i++) {
-        pts_xy[i] = proj<2>(pts[i] / pts[i][3]);
-    }
-
+void triangle(Vec4f *pts, IShader &shader, TGAImage &image, float *zbuffer) {
     // init bounding box
     Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
     Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
-    // image size
-    Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
     // set bounding box
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 2; j++) {
-            bboxmin[j] = std::max(0.f, std::min(bboxmin[j], pts_xy[i][j]));
-            bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts_xy[i][j]));
+            bboxmin[j] = std::min(bboxmin[j], pts[i][j] / pts[i][3]);
+            bboxmax[j] = std::max(bboxmax[j], pts[i][j] / pts[i][3]);
         }
     }
 
@@ -92,8 +81,10 @@ void triangle(mat<4,3,float> &tri_clip, IShader &shader, TGAImage &image, float 
     TGAColor color;
     for (P.x = bboxmin.x; P.x <= bboxmax.x; P.x++) {
         for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++) {
-            Vec3f bc = barycentric(pts_xy[0], pts_xy[1], pts_xy[2], P);
-            float frag_depth = tri_clip[2] * bc;
+            Vec3f bc = barycentric(proj<2>(pts[0] / pts[0][3]), proj<2>(pts[1] / pts[1][3]), proj<2>(pts[2] / pts[2][3]), proj<2>(P));
+            float z = pts[0][2] * bc.x + pts[1][2] * bc.y + pts[2][2] * bc.z;
+            float w = pts[0][3] * bc.x + pts[1][3] * bc.y + pts[2][3] * bc.z;
+            int frag_depth = z / w;
             // if the fragment is outside the triangle, or the depth is larger than the current depth in zbuffer, ignore it
             if (bc.x<0 || bc.y<0 || bc.z<0 || zbuffer[P.x + P.y * image.get_width()] > frag_depth) {
                 continue;
