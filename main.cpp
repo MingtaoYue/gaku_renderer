@@ -70,7 +70,7 @@ struct Shader: public IShader {
         darboux_basis.set_col(0, i.normalize());
         darboux_basis.set_col(1, j.normalize());
         darboux_basis.set_col(2, bn);
-
+        
         // transform the normal vector from Darboux basis to world space
         Vec3f n = (darboux_basis * model->normal(uv)).normalize();
 
