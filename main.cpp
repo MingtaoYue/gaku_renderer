@@ -49,57 +49,30 @@ struct Shader: public IShader {
     // texture coordinates
     mat<2,3,float> varying_uv;
     // triangle coordinates (clip coordinates)
-    mat<4,3,float> varying_tri;
-    // normal vector
-    mat<3,3,float> varying_nrm;
-    // triangle coordinates in normalized device coordinates
-    mat<3,3,float> varying_ndc_tri;
+    mat<3,3,float> varying_tri;
+
+    // uniform- variables are passed from the application to the shader
+    // transform from the output image screen space to the shadow buffer screen space
+    mat<4, 4, float> uniform_MShadow;
+
 
     virtual Vec4f vertex(int iface, int nthvert) {
-        // transform the vertex coordinates from world space to canonical view volume (viewport is not applied yet)
-        Vec4f gl_Vertex = Projection * ModelView * embed<4>(model->vert(iface, nthvert));
-        varying_tri.set_col(nthvert, gl_Vertex);
-
-        // note that the transformation matrix of normal vector is the inverse transpose of the transformation matrix of vertex
-        varying_nrm.set_col(nthvert, proj<3>((Projection * ModelView).invert_transpose() * embed<4>(model->normal(iface, nthvert), 0.f)));
-
-        // texture coordinates
         varying_uv.set_col(nthvert, model->uv(iface, nthvert));
-        
-        // homogeneous to cartesian coordinates
-        varying_ndc_tri.set_col(nthvert, proj<3>(gl_Vertex / gl_Vertex[3]));
+        Vec4f gl_Vertex = Viewport * Projection * ModelView * embed<4>(model->vert(iface, nthvert));
+        varying_tri.set_col(nthvert, proj<3>(gl_Vertex / gl_Vertex[3]));
         return gl_Vertex;
     }
 
     virtual bool fragment(Vec3f bc, TGAColor &color) {
-        // interpolate the normal vector and texture coordinates, normal vector is also the k vector of the Darboux basis
-        Vec3f bn = (varying_nrm * bc).normalize();
-        Vec2f uv = varying_uv * bc;
-
-        // set matrix A to compute Darboux basis (tangent space)
-        mat<3,3,float> A;
-        A[0] = varying_ndc_tri.col(1) - varying_ndc_tri.col(0);
-        A[1] = varying_ndc_tri.col(2) - varying_ndc_tri.col(0);
-        A[2] = bn;
-        mat<3,3,float> A_inverse = A.invert();
-
-        // compute Darboux basis i, j which are gradients of u, v
-        Vec3f i = A_inverse * Vec3f(varying_uv[0][1] - varying_uv[0][0], varying_uv[0][2] - varying_uv[0][0], 0);
-        Vec3f j = A_inverse * Vec3f(varying_uv[1][1] - varying_uv[1][0], varying_uv[1][2] - varying_uv[1][0], 0);
-
-        // set Darboux basis
-        mat<3,3,float> darboux_basis;
-        darboux_basis.set_col(0, i.normalize());
-        darboux_basis.set_col(1, j.normalize());
-        darboux_basis.set_col(2, bn);
-        
-        // transform the normal vector from Darboux basis to world space
-        Vec3f n = (darboux_basis * model->normal(uv)).normalize();
-
-        // diffusion
-        float diff = std::max(0.f, n * light_dir);
-        color = model->diffuse(uv) * diff;
-
+        Vec4f p = embed<4>(varying_tri * bc);
+        // corresponding coordinates in the shadow buffer
+        Vec4f shadowbuffer_p = uniform_MShadow * p;
+        Vec3f shadowbuffer_p_cartesian = proj<3>(shadowbuffer_p / shadowbuffer_p[3]);
+        // index in the shadow buffer array
+        int idx = int(shadowbuffer_p_cartesian.x) + int(shadowbuffer_p_cartesian.y) * width;
+        // if the (reprojected) depth of the fragment is smaller than that of the shadow buffer, then the fragment is in shadow
+        float shadow = shadowbuffer[idx] < shadowbuffer_p_cartesian.z ? 1 : 0;
+        color = TGAColor(255, 255, 255) * shadow;
         return false;
     }
 };
@@ -143,7 +116,29 @@ int main(int argc, char** argv) {
         depthimage.write_tga_file("depthimage.tga");
     }
 
+    // matrix to transform from the world space to the shadow buffer screen space
     Matrix M = Viewport * Projection * ModelView;
+
+    // render the image
+    {
+        TGAImage frame(width, height, TGAImage::RGB);
+        lookat(eye, center, up);
+        projection(-1.f / (eye - center).norm());
+        viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
+
+        Shader shader;
+        // first transform from the image screen space back to the world space, then to the shadow buffer screen space
+        shader.uniform_MShadow = M * ((Viewport * Projection * ModelView).invert());
+        Vec4f screen_coords[3];
+        for (int i = 0; i < model->nfaces(); i++) {
+            for (int j = 0; j < 3; j++) {
+                screen_coords[j] = shader.vertex(i, j);
+            }
+            triangle(screen_coords, shader, frame, zbuffer);
+        }
+        frame.flip_vertically();
+        frame.write_tga_file("output.tga");
+    }
 
     delete model;
     delete [] zbuffer;
