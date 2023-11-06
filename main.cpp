@@ -71,7 +71,8 @@ struct Shader: public IShader {
         // index in the shadow buffer array
         int idx = int(shadowbuffer_p_cartesian.x) + int(shadowbuffer_p_cartesian.y) * width;
         // if the (reprojected) depth of the fragment is smaller than that of the shadow buffer, then the fragment is in shadow
-        float shadow = shadowbuffer[idx] < shadowbuffer_p_cartesian.z ? 1 : 0;
+        float shadow = 0.3 + 0.7 * (shadowbuffer[idx] < shadowbuffer_p_cartesian.z);
+        
         color = TGAColor(255, 255, 255) * shadow;
         return false;
     }
