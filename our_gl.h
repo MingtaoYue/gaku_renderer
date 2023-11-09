@@ -1,23 +1,21 @@
-#ifndef __OUR_GL_H__
-#define __OUR_GL_H__
 #include "tgaimage.h"
 #include "geometry.h"
 
-extern Matrix ModelView;
-extern Matrix Projection;
-extern Matrix Viewport;
-const float depth = 2000.f;
-
-void lookat(Vec3f eye, Vec3f center, Vec3f up);
-void viewport(int x, int y, int w, int h);
-// coeff = -1/c, where c is focal length, 0 indicates orthographic projection
-void projection(float coeff=0.f);
+// model + view, projection, viewport transform
+void lookat(const vec3 eye, const vec3 center, const vec3 up);
+void projection(const double coeff=0);
+void viewport(const int x, const int y, const int w, const int h);
 
 struct IShader {
-    virtual ~IShader();
-    virtual Vec4f vertex(int iface, int nthvert) = 0;
-    virtual bool fragment(Vec3f bar, TGAColor &color) = 0;
+    // get color from texture image
+    static TGAColor sample2D(const TGAImage &img, vec2 &uvf) {
+        return img.get(uvf[0] * img.width(), uvf[1] * img.height());
+    }
+    // set up for one vertex (texture coordinate, normal vector, transformed coordinate)
+    virtual void vertex(const int iface, const int nthvert, vec4 &gl_Position) = 0;
+    // shade for one fragment (pixel) inside triangle
+    virtual bool fragment(const vec3 bar, TGAColor &color) = 0;
 };
 
-void triangle(Vec4f *pts, IShader &shader, TGAImage &image, float *zbuffer);
-#endif
+// draw triangle
+void triangle(const vec4 clip_verts[3], IShader &shader, TGAImage &image, std::vector<double> &zbuffer);
