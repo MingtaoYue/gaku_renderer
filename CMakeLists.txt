@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.1)
-project(tinyrenderer)
+project(gakurenderer)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CNAJE_CXX_STANDARD_REQUIRED ON)
