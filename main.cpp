@@ -49,8 +49,17 @@ struct Shader: IShader {
 
     // fragment shader
     virtual bool fragment(const vec3 bc, TGAColor &gl_FragColor) {
+        // interpolate normal vector and texture coordinates
+        vec3 n = (varying_nrm * bc).normalized();
         vec2 uv = varying_uv * bc;
-        gl_FragColor = sample2D(model.diffuse(), uv);
+
+        // diffuse lighting
+        double diff = std::max(0., n * uniform_l);
+        // color from texture
+        TGAColor color = sample2D(model.diffuse(), uv);
+        for (int i = 0; i < 3; i++) {
+            gl_FragColor[i] = std::min<int>(color[i] * diff, 255);
+        }
         return false;
     }
 };
