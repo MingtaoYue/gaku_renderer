@@ -68,7 +68,7 @@ void triangle(const vec4 clip_verts[3], IShader &shader, TGAImage &image, std::v
             // if the pixel is not inside the triangle (either of the barycentric coordinates is negative), or the depth is smaller than the zbuffer, then skip
             if (bc.x < 0 || bc.y < 0 || bc.z < 0 || frag_depth < zbuffer[x + y * image.width()])
                 continue;
-            
+                
             TGAColor color;
             // fragment shader can discard the pixel
             if (shader.fragment(bc, color))

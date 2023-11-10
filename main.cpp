@@ -1,149 +1,91 @@
-#include <vector>
 #include <limits>
-#include <iostream>
-#include "tgaimage.h"
 #include "model.h"
-#include "geometry.h"
 #include "our_gl.h"
 
-Model *model = NULL;
-float *shadowbuffer = NULL;
+// image size
+constexpr int width = 800;
+constexpr int height = 800;
 
-// pixel size of the output image
-const int width = 800;
-const int height = 800;
-
-// light direction (parallel light)
-Vec3f light_dir(1, 1, 0);
+// light direction
+constexpr vec3 light_dir = {1, 1, 1};
 
 // camera position
-Vec3f eye(1,1,4);
-// center of the scene, length from the camera to the center is the focal length
-Vec3f center(0,0,0);
-// camera up vector, may not be perpendicular to the view vector
-Vec3f up(0,1,0);
+constexpr vec3 eye = {1, 1, 3};
+// center of the scene
+constexpr vec3 center = {0, 0, 0};
+// up direction (may not be perpendicular to the camera lookat direction)
+constexpr vec3 up = {0, 1, 0};
 
-struct DepthShader: public IShader {
-    mat<3, 3, float> varying_tri;
+// mvp matrices
+extern mat<4, 4> ModelView;
+extern mat<4, 4> Projection;
 
-    DepthShader() {
-        varying_tri = mat<3, 3, float>();
-    }
-
-    virtual Vec4f vertex(int iface, int nthvert) {
-        Vec4f gl_Vertex = embed<4>(model->vert(iface, nthvert));
-        gl_Vertex = Viewport * Projection * ModelView * gl_Vertex;
-        varying_tri.set_col(nthvert, proj<3>(gl_Vertex / gl_Vertex[3]));
-        return gl_Vertex;
-    }
-
-    virtual bool fragment(Vec3f bar, TGAColor &color) {
-        Vec3f p = varying_tri * bar;
-        color = TGAColor(255, 255, 255) * (p.z / depth);
-        return false;
-    }
-};
-
-struct Shader: public IShader {
-    // varying- variables are set by the vertex shader and interpolated by the fragment shader
+struct Shader: IShader {
+    const Model &model;
+    // light direction in camera space
+    vec3 uniform_l;
     // texture coordinates
-    mat<2,3,float> varying_uv;
-    // triangle coordinates (clip coordinates)
-    mat<3,3,float> varying_tri;
+    mat<2, 3> varying_uv;
+    // normal vector
+    mat<3, 3> varying_nrm;
+    // triangle in camera space
+    mat<3, 3> view_tri;
 
-    // uniform- variables are passed from the application to the shader
-    // transform from the output image screen space to the shadow buffer screen space
-    mat<4, 4, float> uniform_MShadow;
-
-
-    virtual Vec4f vertex(int iface, int nthvert) {
-        varying_uv.set_col(nthvert, model->uv(iface, nthvert));
-        Vec4f gl_Vertex = Viewport * Projection * ModelView * embed<4>(model->vert(iface, nthvert));
-        varying_tri.set_col(nthvert, proj<3>(gl_Vertex / gl_Vertex[3]));
-        return gl_Vertex;
+    Shader(const Model &m): model(m) {
+        // transform light direction to camera space
+        uniform_l = proj<3>(ModelView * embed<4>(light_dir, 0.)).normalized();
     }
 
-    virtual bool fragment(Vec3f bc, TGAColor &color) {
-        Vec4f p = embed<4>(varying_tri * bc);
-        // corresponding coordinates in the shadow buffer
-        Vec4f shadowbuffer_p = uniform_MShadow * p;
-        Vec3f shadowbuffer_p_cartesian = proj<3>(shadowbuffer_p / shadowbuffer_p[3]);
-        // index in the shadow buffer array
-        int idx = int(shadowbuffer_p_cartesian.x) + int(shadowbuffer_p_cartesian.y) * width;
-        // if the (reprojected) depth of the fragment is smaller than that of the shadow buffer, then the fragment is in shadow
-        float shadow = 0.3 + 0.7 * (shadowbuffer[idx] < shadowbuffer_p_cartesian.z);
-        
-        color = TGAColor(255, 255, 255) * shadow;
+    // vertex shader
+    virtual void vertex(const int iface, const int nthvert, vec4 &gl_Position) {
+        varying_uv.set_col(nthvert, model.uv(iface, nthvert));
+        // transform normal vector to camera space, note that the matrix is the inverse transpose of that of the vertex
+        varying_nrm.set_col(nthvert,  proj<3>(ModelView.invert_transpose() * embed<4>(model.normal(iface, nthvert), 0.f)));
+        gl_Position = ModelView * embed<4>(model.vert(iface, nthvert));
+        // transform triangle to camera space (before projection)
+        view_tri.set_col(nthvert, proj<3>(gl_Position) / gl_Position[3]);
+        gl_Position = Projection * gl_Position;
+    }
+
+    // fragment shader
+    virtual bool fragment(const vec3 bc, TGAColor &gl_FragColor) {
+        vec2 uv = varying_uv * bc;
+        gl_FragColor = sample2D(model.diffuse(), uv);
         return false;
     }
 };
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Enter model path such as \"obj/african_head.obj\"" << std::endl;
+        std::cerr << "Please specify a model to render, like \"../obj/diablo3_pose/diablo3_pose.obj\"" << std::endl;
         return 1;
     }
 
-    // initialize the zbuffer and shadow buffer, depth is set to negative infinity
-    float *zbuffer = new float[width * height];
-    shadowbuffer = new float[width * height];
-    for (int i = 0; i < width * height; i++) {
-        zbuffer[i] = -std::numeric_limits<float>::max();
-        shadowbuffer[i] = -std::numeric_limits<float>::max();
-    }
+    // output image
+    TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    model = new Model(argv[1]);
-    light_dir.normalize();
-    
-    // render the shadow buffer
-    {
-        TGAImage depthimage(width, height, TGAImage::RGB);
-        // place the camera at the light source position, here the position is equal to the direction
-        lookat(light_dir, center, up);
-        // focal length is set to infinity to achieve parallel light
-        projection(0);
-        viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
-        
-        DepthShader depthshader;
-        Vec4f screen_coords[3];
-        for (int i = 0; i < model->nfaces(); i++) {
+    // set mvp and viewport matrices
+    lookat(eye, center, up);
+    projection(-1.f / (eye - center).norm());
+    viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
+
+    // init zbuffer to minus infinity
+    std::vector<double> zbuffer(width * height, -std::numeric_limits<double>::max());
+
+    // load each model
+    for (int m = 1; m < argc; m++) {
+        Model model(argv[m]);
+        Shader shader(model);
+        for (int i = 0; i < model.nfaces(); i++) {
+            // set by vertex shader, used by fragment shader
+            vec4 clip_verts[3];
             for (int j = 0; j < 3; j++) {
-                screen_coords[j] = depthshader.vertex(i, j);
+                shader.vertex(i, j, clip_verts[j]);
             }
-            // shadow buffer is the zbuffer when the camera is at the light source position
-            triangle(screen_coords, depthshader, depthimage, shadowbuffer);
+            triangle(clip_verts, shader, framebuffer, zbuffer);
         }
-        depthimage.flip_vertically();
-        depthimage.write_tga_file("depthimage.tga");
     }
 
-    // matrix to transform from the world space to the shadow buffer screen space
-    Matrix M = Viewport * Projection * ModelView;
-
-    // render the image
-    {
-        TGAImage frame(width, height, TGAImage::RGB);
-        lookat(eye, center, up);
-        projection(-1.f / (eye - center).norm());
-        viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
-
-        Shader shader;
-        // first transform from the image screen space back to the world space, then to the shadow buffer screen space
-        shader.uniform_MShadow = M * ((Viewport * Projection * ModelView).invert());
-        Vec4f screen_coords[3];
-        for (int i = 0; i < model->nfaces(); i++) {
-            for (int j = 0; j < 3; j++) {
-                screen_coords[j] = shader.vertex(i, j);
-            }
-            triangle(screen_coords, shader, frame, zbuffer);
-        }
-        frame.flip_vertically();
-        frame.write_tga_file("output.tga");
-    }
-
-    delete model;
-    delete [] zbuffer;
-    delete [] shadowbuffer;
+    framebuffer.write_tga_file("framebuffer.tga");
     return 0;
 }
-
