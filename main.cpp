@@ -58,7 +58,7 @@ struct Shader: IShader {
         // color from texture
         TGAColor color = sample2D(model.diffuse(), uv);
         for (int i = 0; i < 3; i++) {
-            gl_FragColor[i] = std::min<int>(color[i] * diff, 255);
+            gl_FragColor[i] = std::min<int>(10 + color[i] * diff, 255);
         }
         return false;
     }
