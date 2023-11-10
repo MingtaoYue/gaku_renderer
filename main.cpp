@@ -3,8 +3,8 @@
 #include "our_gl.h"
 
 // image size
-constexpr int width = 800;
-constexpr int height = 800;
+constexpr int width = 5000;
+constexpr int height = 5000;
 
 // light direction
 constexpr vec3 light_dir = {1, 1, 1};
@@ -55,10 +55,15 @@ struct Shader: IShader {
 
         // diffuse lighting
         double diff = std::max(0., n * uniform_l);
+        // reflection light
+        vec3 r = (n * (n * uniform_l) * 2 - uniform_l).normalized();;
+        // specular lighting, because the camera is looking at -z direction, so the intensity is proportional to r.z
+        double spec = std::pow(std::max(r.z, 0.), 5 + sample2D(model.specular(), uv)[0]);
         // color from texture
         TGAColor color = sample2D(model.diffuse(), uv);
+        // Blinn-Phong reflection model
         for (int i = 0; i < 3; i++) {
-            gl_FragColor[i] = std::min<int>(10 + color[i] * diff, 255);
+            gl_FragColor[i] = std::min<int>(10 + color[i] * (diff + spec), 255);
         }
         return false;
     }
