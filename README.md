@@ -15,6 +15,4 @@ cmake --build . -j
 - Zバッファで深度情報を保存
 - さまざまなスタイルのフラグメントシェーダー (前のcommitを参照)を実装し、各三角形において頂点の位置、テクスチャ情報、光源情報を基に、三角形内のピクセルの色を内挿し、画面にレンダリング
 # レンダリング例
-
-
-
+<img width="285" alt="Screenshot 2023-12-18 at 11 24 09" src="https://github.com/MingtaoYue/gaku_renderer/assets/127390549/be75259f-49e8-45be-8c48-8d72829804f3">
